@@ -1,6 +1,15 @@
+from __future__ import annotations
+
+from unstructured.partition.auto import partition
+
+
 def main():
-    print("Hello from ragnar!")
+
+    elements = partition(
+        filename='',
+    )
+    print(elements)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
