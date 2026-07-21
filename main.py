@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from unstructured.partition.auto import partition
+from docling.document_converter import DocumentConverter
 
 
 def main():
 
-    elements = partition(
-        filename='',
+    converter = DocumentConverter()
+    result = converter.convert(
+        r'',
     )
-    print(elements)
+    doc = result.document
+    return doc
 
 
 if __name__ == '__main__':
