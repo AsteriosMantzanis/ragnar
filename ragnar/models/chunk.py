@@ -3,11 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from models.document_node import DocumentNode
-
 
 @dataclass
-class Document:
+class Chunk:
     id: str
-    root: DocumentNode
+    text: str
     metadata: dict[str, Any]

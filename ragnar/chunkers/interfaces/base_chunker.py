@@ -1,0 +1,13 @@
+from __future__ import annotations
+
+from abc import ABC
+from abc import abstractmethod
+
+from models.chunk import Chunk
+from models.document import Document
+
+
+class BaseChunker(ABC):
+    @abstractmethod
+    def chunk(self, document: Document) -> list[Chunk]:
+        pass

@@ -7,10 +7,11 @@ def main():
 
     converter = DocumentConverter()
     result = converter.convert(
-        r'',
+        r'C:\\Users\\aster\\Downloads\\HP0300-Manual.pdf',
     )
     doc = result.document
-    return doc
+    table_md = doc.tables[0].export_to_markdown(doc)
+    return doc, table_md
 
 
 if __name__ == '__main__':
