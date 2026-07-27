@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from models.document_node import DocumentNode
+from models.document_element import DocumentElement
 
 
 @dataclass
 class Document:
     id: str
-    root: DocumentNode
+    source: str
+    elements: list[DocumentElement]
     metadata: dict[str, Any]
