@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 from docling.document_converter import DocumentConverter
+from docling_core.types.doc import TableItem
 from loguru import logger
 
 from ragnar.loaders.interfaces.base_loader import BaseLoader
@@ -45,12 +46,17 @@ class DoclingLoader(BaseLoader):
 
         elements = []
         for item, level in doc.iterate_items():
-            text = getattr(item, 'text', None)
+            if isinstance(item, TableItem):
+                text = item.export_to_markdown(doc)
+            else:
+                text = getattr(item, 'text', None)
+
+            # skip empty items
             if not text or not text.strip():
                 continue
 
             element = DocumentElement(
-                text=text.strip(),
+                text=text,
                 label=item.label.value,
                 level=level,
                 page=getattr(
