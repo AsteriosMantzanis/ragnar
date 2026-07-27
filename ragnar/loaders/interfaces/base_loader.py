@@ -4,7 +4,7 @@ from abc import ABC
 from abc import abstractmethod
 from pathlib import Path
 
-from models.document import Document
+from ragnar.models.document import Document
 
 
 class BaseLoader(ABC):

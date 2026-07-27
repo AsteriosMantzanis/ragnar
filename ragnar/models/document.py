@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from models.document_element import DocumentElement
+from ragnar.models.document_element import DocumentElement
 
 
 @dataclass
