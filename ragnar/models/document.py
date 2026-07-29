@@ -9,6 +9,5 @@ from ragnar.models.document_element import DocumentElement
 @dataclass
 class Document:
     id: str
-    source: str
     elements: list[DocumentElement]
     metadata: dict[str, Any]

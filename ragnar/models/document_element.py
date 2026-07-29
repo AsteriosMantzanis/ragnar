@@ -8,4 +8,3 @@ class DocumentElement:
     text: str
     label: str
     page: int | None
-    source: str
