@@ -20,14 +20,14 @@ class PageChunker(BaseChunker):
         """
         pages = []
         buffer: list[DocumentElement] = []
+        current_page: int | None = None
+
         for element in document.elements:
-            if element.page is not None:
-                if buffer:
-                    pages.extend(self.flush(buffer, document))
-                    buffer = []
-                buffer.append(element)
-            else:
-                buffer.append(element)
+            if element.page != current_page and buffer:
+                pages.extend(self.flush(buffer, document))
+                buffer = []
+            current_page = element.page
+            buffer.append(element)
 
         # final flush of the buffer
         if buffer:
@@ -40,7 +40,7 @@ class PageChunker(BaseChunker):
         document: Document,
     ) -> list[Chunk]:
         """
-        Flush the buffer to sections.
+        Flush the buffer to pages.
 
         Args:
             buffer (list[DocumentElement]): The buffer to be flushed.
