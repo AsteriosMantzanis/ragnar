@@ -7,7 +7,5 @@ from dataclasses import dataclass
 class DocumentElement:
     text: str
     label: str
-    level: int
     page: int | None
-    parent_ref: str | None
-    element_id: str
+    source: str

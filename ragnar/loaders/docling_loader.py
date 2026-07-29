@@ -58,13 +58,11 @@ class DoclingLoader(BaseLoader):
             element = DocumentElement(
                 text=text,
                 label=item.label.value,
-                level=level,
                 page=getattr(
                     item.prov[0], 'page_no',
                     None,
                 ) if item.prov else None,
-                parent_ref=item.parent,
-                element_id=item.self_ref,
+                source=str(path).rsplit('.')[0],
             )
             elements.append(element)
             logger.info(
@@ -76,7 +74,7 @@ class DoclingLoader(BaseLoader):
         return [
             Document(
                 id=doc_id,
-                source=str(path),
+                source=str(path).rsplit('.')[0],
                 elements=elements,
                 metadata={
                     'filename': path.name,

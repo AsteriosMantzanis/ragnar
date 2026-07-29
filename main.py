@@ -10,15 +10,16 @@ def main():
 
     # converter = DocumentConverter()
     # result = converter.convert(
-    #     Path('C:/Users/aster/Desktop/manuals/4101RH.pdf'),
+    #     Path('C:/Users/aster/Desktop/manuals/Hammer_Driver_Drill_HP0300.pdf'),
     # )
     # doc = result.document
     # table_md = doc.tables[0].export_to_markdown(doc)
     # return doc, table_md
 
     loader = DoclingLoader()
-    documents = loader.load(Path('C:/Users/aster/Desktop/manuals'))
+    documents = loader.load(Path(''))
     print(f"Loaded {len(documents)} documents.")
+    print(documents[0])
 
 
 if __name__ == '__main__':
