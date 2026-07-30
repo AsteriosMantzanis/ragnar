@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from ragnar.chunkers.interfaces.base_chunker import BaseChunker
 from ragnar.models.chunk import Chunk
 from ragnar.models.document import Document
@@ -50,16 +52,21 @@ class PageChunker(BaseChunker):
         """
         text = f"[{document.metadata['filename']} — {buffer[0].text}]\n" + \
             '\n'.join([element.text for element in buffer[1:]])
-        pages = [
-            element.page for element in buffer
-            if element.page is not None
-        ]
+        page = buffer[0].page if buffer[0].page is not None else 0
+
+        # create page ids from document name and page number
+        page_id = hashlib.sha256(
+            f"{document.metadata['filename']}_{page}".encode(),
+        ).hexdigest()
 
         return [
             Chunk(
-                id=document.id,
+                id=page_id,
                 text=text,
-                pages=pages,
-                metadata=document.metadata,
+                pages=page,
+                metadata={
+                    **document.metadata,  # add more metadata to the chunk
+                    'page_title': buffer[0].text,
+                },
             ),
         ]

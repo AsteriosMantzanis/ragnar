@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+from uuid import uuid4
+
 from ragnar.chunkers.interfaces.base_chunker import BaseChunker
 from ragnar.models.chunk import Chunk
 from ragnar.models.document import Document
@@ -56,11 +59,25 @@ class SectionChunker(BaseChunker):
             element.page is not None
         ]
 
+        # create section ids from document name and page number
+        parent_page_ids = [
+            hashlib.sha256(
+                f"{document.metadata['filename']}_{i}".encode(),
+            ).hexdigest() for i in list(set(pages))
+        ]
+
+        # section ids
+        section_id = uuid4().hex
+
         return [
             Chunk(
-                id=document.id,
+                id=section_id,
                 text=text,
                 pages=pages,
-                metadata=document.metadata,
+                metadata={
+                    **document.metadata,  # add more metadata to the chunk
+                    'parent_page_ids': parent_page_ids,
+                    'section_title': buffer[0].text,
+                },
             ),
         ]

@@ -8,5 +8,5 @@ from typing import Any
 class Chunk:
     id: str
     text: str
-    pages: list[int]
+    pages: int | list[int]
     metadata: dict[str, Any]
