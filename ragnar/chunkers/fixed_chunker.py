@@ -31,9 +31,11 @@ class FixedChunker(BaseChunker):
             buffer.append(element)
             current_len += len(element.text)
             if current_len >= chunk_size:
-                chunks.extend(self.flush(buffer, document, overlap_text))
-                # Keep the last 'overlap' characters for the next chunk
-                overlap_text = buffer[-1].text[-overlap:]
+                chunk = self.flush(buffer, document, overlap_text)[0]
+                overlap_text = chunk.text[-overlap:] if len(
+                    chunk.text,
+                ) > overlap else ''
+                chunks.append(chunk)
                 buffer = []
                 current_len = 0
 
@@ -60,7 +62,7 @@ class FixedChunker(BaseChunker):
             list[Chunk]: A list of chunked documents.
         """
         text = f"[{document.metadata['filename']}]\n" + overlap_text + '\n' + \
-            '\n'.join([element.text for element in buffer[1:]])
+            '\n'.join([element.text for element in buffer])
         pages = [
             element.page for element in buffer if
             element.page is not None
@@ -73,7 +75,7 @@ class FixedChunker(BaseChunker):
                 pages=pages,
                 metadata={
                     **document.metadata,  # add more metadata to the chunk
-                    'chunk_type': 'fixed',
+                    'chunk_type': 'fixed+overlap',
                 },
             ),
         ]
