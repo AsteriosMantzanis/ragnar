@@ -10,4 +10,11 @@ from models.document import Document
 class BaseChunker(ABC):
     @abstractmethod
     def chunk(self, document: Document) -> list[Chunk]:
-        pass
+        """Chunk the document into smaller pieces.
+
+        Args:
+            document (Document): The document to be chunked.
+
+        Returns:
+            list[Chunk]: A list of chunked documents.
+        """

@@ -22,7 +22,7 @@ class SectionChunker(BaseChunker):
         Returns:
             list[Chunk]: A list of chunked documents.
         """
-        sections = []
+        sections: list[Chunk] = []
         buffer: list[DocumentElement] = []
         for element in document.elements:
             if element.label.startswith('section'):

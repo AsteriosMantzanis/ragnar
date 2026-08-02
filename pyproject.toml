@@ -9,6 +9,7 @@ dependencies = [
     "loguru>=0.7.3",
     "pre-commit>=4.6.0",
     "python-dotenv>=1.2.2",
+    "qdrant-client>=1.18.0",
 ]
 
 [mypy]
