@@ -3,8 +3,8 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 
-from models.chunk import Chunk
-from models.document import Document
+from ragnar.models.chunk import Chunk
+from ragnar.models.document import Document
 
 
 class BaseChunker(ABC):

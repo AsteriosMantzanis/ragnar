@@ -22,7 +22,7 @@ class FixedChunker(BaseChunker):
         """
         chunks = []
         buffer: list[DocumentElement] = []
-        chunk_size = 1000  # Define the fixed size for each chunk in characters
+        chunk_size = 600  # Define the fixed size for each chunk in characters
         overlap = 100  # Define the overlap size for each chunk in characters
         current_len = 0
         overlap_text = ''

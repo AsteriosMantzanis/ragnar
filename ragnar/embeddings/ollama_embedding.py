@@ -10,7 +10,7 @@ from ragnar.embeddings.interfaces.base_embedding import BaseEmbedding
 
 class OllamaEmbedding(BaseEmbedding):
     def __init__(
-        self, model: str = 'nomic-embed-text',
+        self, model: str = 'nomic-embed-text:latest',
         max_concurrent: int = 3,
     ):
         self.model = model
@@ -34,7 +34,7 @@ class OllamaEmbedding(BaseEmbedding):
                     response = await self.client.post(
                         '/api/embed',
                         json={'model': self.model, 'input': text},
-                        timeout=30.0,
+                        timeout=10.0,
                     )
                     response.raise_for_status()
                     return response.json()['embeddings']
