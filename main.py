@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ragnar.chunkers.fixed_chunker import FixedChunker
 from ragnar.embeddings.ollama_embedding import OllamaEmbedding
+from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.loaders.docling_loader import DoclingLoader
 # from docling.document_converter import DocumentConverter
 
@@ -21,7 +22,7 @@ async def main():
 
     loader = DoclingLoader()
     documents = loader.load(
-        Path('C:/Users/aster/Desktop/manuals/Hammer_Driver_Drill_HP0300.pdf'),
+        Path(''),
     )
     print(f"Loaded {len(documents)} documents.")
     print(documents[0])
@@ -30,10 +31,29 @@ async def main():
     print(f"Created {len(chunks)} chunks.")
     print(chunks[0])
 
-    embedding = OllamaEmbedding()
-    embeddings = await embedding.embed([i.text for i in chunks])
-    print(f"Created {len(embeddings)} embeddings.")
-    print(embeddings[0])
+    indexer = QdrantIndexer(
+        host='localhost',
+        port=6333,
+        embedder=OllamaEmbedding(),
+        collection_name='manuals',
+    )
+
+    await indexer.index(chunks)
+
+    # Query to see first item
+    points, _ = indexer.client.scroll(
+        collection_name=indexer.collection_name,
+        limit=1,
+    )
+
+    if points:
+        point = points[0]
+        print('First indexed point:')
+        print(f"ID: {point.id}")
+        print(f"Text: {point.payload['text'][:100]}...")
+        print(f"Metadata: {point.payload}")
+    else:
+        print('No points in collection')
 
 
 if __name__ == '__main__':

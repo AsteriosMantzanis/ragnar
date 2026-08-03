@@ -18,8 +18,35 @@ class OllamaEmbedding(BaseEmbedding):
         self.client = AsyncClient(base_url=self.base_url)
         self.max_concurrent = asyncio.Semaphore(max_concurrent)
 
-    async def embed(self, text: list[str]) -> list[list[float]]:
-        """Generate an embedding for the given text using Ollama.
+    async def embed(
+        self, texts: list[str],
+        batch_size: int = 20,
+    ) -> list[list[float]]:
+        """Split tasks in batch size and generate embeddings.
+
+        Args:
+            texts (list[str]): The input texts to be embedded.
+            batch_size (int): The size of each batch for embedding.
+
+        Returns:
+            list[list[float]]: The generated embedding vectors.
+        """
+        batches = [
+            texts[i:i+batch_size]
+            for i in range(0, len(texts), batch_size)
+        ]
+
+        tasks = [self._embed_batch(batch) for batch in batches]
+
+        results = await asyncio.gather(*tasks)
+
+        return [
+            emb for batch_embeddings in results
+            for emb in batch_embeddings
+        ]
+
+    async def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+        """Generate an embedding for the given batch.
 
         Args:
 
@@ -33,7 +60,7 @@ class OllamaEmbedding(BaseEmbedding):
                 try:
                     response = await self.client.post(
                         '/api/embed',
-                        json={'model': self.model, 'input': text},
+                        json={'model': self.model, 'input': batch},
                         timeout=10.0,
                     )
                     response.raise_for_status()
