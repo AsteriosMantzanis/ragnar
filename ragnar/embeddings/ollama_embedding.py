@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
+from dotenv import load_dotenv
 from httpx import AsyncClient
 from loguru import logger
 
 from ragnar.embeddings.interfaces.base_embedding import BaseEmbedding
+load_dotenv()
 
 
 class OllamaEmbedding(BaseEmbedding):
     def __init__(
-        self, model: str = 'nomic-embed-text:latest',
+        self, model: str = os.getenv('EMBED_MODEL', 'nomic-embed-text:latest'),
         max_concurrent: int = 3,
     ):
         self.model = model
-        self.base_url = 'http://localhost:11434'
+        self.base_url = os.getenv('OLLAMA_URL', 'http://localhost:11434')
         self.client = AsyncClient(base_url=self.base_url)
         self.max_concurrent = asyncio.Semaphore(max_concurrent)
 

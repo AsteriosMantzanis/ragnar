@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 
+from dotenv import load_dotenv
 from loguru import logger
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance
@@ -11,15 +13,17 @@ from qdrant_client.http.models import VectorParams
 from ragnar.embeddings.ollama_embedding import OllamaEmbedding
 from ragnar.index.interfaces.base_indexer import BaseIndexer
 from ragnar.models.chunk import Chunk
+load_dotenv()
 
 
 class QdrantIndexer(BaseIndexer):
     def __init__(
-        self, host: str, port: int,
+        self,
         embedder: OllamaEmbedding, collection_name: str,
-        embedding_dim: int = 768,
+        embedding_dim: int = int(os.getenv('embedding_dim', '768')),
+        url: str = os.getenv('QDRANT_URL', 'http://localhost:6333'),
     ):
-        self.client = QdrantClient(host=host, port=port)
+        self.client = QdrantClient(url=url)
         self.embedder = embedder
         self.embedding_dim = embedding_dim
         self.collection_name = collection_name

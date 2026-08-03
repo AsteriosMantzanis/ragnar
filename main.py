@@ -22,7 +22,7 @@ async def main():
 
     loader = DoclingLoader()
     documents = loader.load(
-        Path(''),
+        Path('C:/Users/aster/Desktop/manuals/Hammer_Driver_Drill_HP0300.pdf'),
     )
     print(f"Loaded {len(documents)} documents.")
     print(documents[0])
@@ -32,8 +32,6 @@ async def main():
     print(chunks[0])
 
     indexer = QdrantIndexer(
-        host='localhost',
-        port=6333,
         embedder=OllamaEmbedding(),
         collection_name='manuals',
     )
