@@ -8,9 +8,10 @@ from loguru import logger
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance
 from qdrant_client.http.models import PointStruct
+from qdrant_client.http.models import SparseVectorParams
 from qdrant_client.http.models import VectorParams
 
-from ragnar.embeddings.ollama_embedding import OllamaEmbedding
+from ragnar.embeddings.interfaces.base_embedding import BaseEmbedding
 from ragnar.index.interfaces.base_indexer import BaseIndexer
 from ragnar.models.chunk import Chunk
 load_dotenv()
@@ -19,13 +20,14 @@ load_dotenv()
 class QdrantIndexer(BaseIndexer):
     def __init__(
         self,
-        embedder: OllamaEmbedding, collection_name: str,
-        embedding_dim: int = int(os.getenv('embedding_dim', '768')),
+        dense_embedder: BaseEmbedding,
+        sparse_embedder: BaseEmbedding,
+        collection_name: str,
         url: str = os.getenv('QDRANT_URL', 'http://localhost:6333'),
     ):
         self.client = QdrantClient(url=url)
-        self.embedder = embedder
-        self.embedding_dim = embedding_dim
+        self.dense_embedder = dense_embedder
+        self.sparse_embedder = sparse_embedder
         self.collection_name = collection_name
         self._ensure_collection()
 
@@ -43,26 +45,49 @@ class QdrantIndexer(BaseIndexer):
             )
             self.client.create_collection(
                 collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=self.embedding_dim,
-                    distance=Distance.COSINE,
-                ),
+                vectors_config={
+                    'text': VectorParams(
+                        size=self.dense_embedder.dimension,
+                        distance=Distance.COSINE,
+                    ),
+                },
+                sparse_vectors_config={
+                    'text': SparseVectorParams(),
+                } if self.sparse_embedder else None,
             )
 
     async def index(self, chunks: list[Chunk]) -> None:
         texts = [chunk.text for chunk in chunks]
 
-        # Embedder handles batching (50 per call, max 3 concurrent)
-        embeddings = await self.embedder.embed(texts)
+        # Embedder handles batching (20 per call, max 3 concurrent)
+        dense_embeddings = await self.dense_embedder.embed(texts)
+        sparse_embeddings = await self.sparse_embedder.embed(texts)
 
+        dense_points = await self._collect_dense_points(
+            chunks, dense_embeddings,
+        )
+        sparse_points = await self._collect_sparse_points(
+            chunks, sparse_embeddings,
+        )
+
+        self.client.upsert(
+            collection_name=self.collection_name,
+            points=dense_points + sparse_points,
+        )
+        logger.info(f"Indexed {len(chunks)} chunks.")
+
+    async def _collect_dense_points(
+        self, chunks: list[Chunk],
+        dense_embeddings: list[list[float]],
+    ) -> list[PointStruct]:
         points = []
-        for chunk, embedding in zip(chunks, embeddings):
+        for chunk, dense_embedding in zip(chunks, dense_embeddings):
             point = PointStruct(
                 id=int(
                     hashlib.md5(chunk.id.encode()).
                     hexdigest(), 16,
                 ) % (10**8),
-                vector=embedding,
+                vector=dense_embedding,
                 payload={
                     'chunk_id': chunk.id,
                     'text': chunk.text,
@@ -72,8 +97,26 @@ class QdrantIndexer(BaseIndexer):
             )
             points.append(point)
 
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=points,
-        )
-        logger.info(f"Indexed {len(chunks)} chunks.")
+        return points
+
+    async def _collect_sparse_points(
+        self, chunks: list[Chunk], sparse_embeddings: list[list[float]],
+    ) -> list[PointStruct]:
+        points = []
+        for chunk, sparse_embedding in zip(chunks, sparse_embeddings):
+            point = PointStruct(
+                id=int(
+                    hashlib.md5(chunk.id.encode()).
+                    hexdigest(), 16,
+                ) % (10**8),
+                sparse_vector=sparse_embedding,
+                payload={
+                    'chunk_id': chunk.id,
+                    'text': chunk.text,
+                    'pages': chunk.pages,
+                    **chunk.metadata,
+                },
+            )
+            points.append(point)
+
+        return points

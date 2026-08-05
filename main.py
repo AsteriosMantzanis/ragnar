@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 from ragnar.chunkers.fixed_chunker import FixedChunker
-from ragnar.embeddings.ollama_embedding import OllamaEmbedding
+from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.loaders.docling_loader import DoclingLoader
 # from docling.document_converter import DocumentConverter
@@ -32,7 +32,7 @@ async def main():
     print(chunks[0])
 
     indexer = QdrantIndexer(
-        embedder=OllamaEmbedding(),
+        embedder=DenseFastEmbedding(),
         collection_name='manuals',
     )
 

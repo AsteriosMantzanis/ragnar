@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "docling[easyocr]>=2.114.0",
+    "fastembed>=0.8.0",
     "loguru>=0.7.3",
     "pre-commit>=4.6.0",
     "python-dotenv>=1.2.2",

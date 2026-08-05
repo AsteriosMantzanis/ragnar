@@ -21,6 +21,11 @@ class OllamaEmbedding(BaseEmbedding):
         self.client = AsyncClient(base_url=self.base_url)
         self.max_concurrent = asyncio.Semaphore(max_concurrent)
 
+    @property
+    def dimension(self) -> int:
+        """Return the embedding dimension for the model."""
+        return int(os.getenv('EMBED_DIMENSION', '768'))
+
     async def embed(
         self, texts: list[str],
         batch_size: int = 20,

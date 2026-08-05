@@ -5,6 +5,12 @@ from abc import abstractmethod
 
 
 class BaseEmbedding(ABC):
+
+    @property
+    @abstractmethod
+    def dimension(self) -> int:
+        """Embedding dimension, or None for sparse embedders."""
+
     @abstractmethod
     async def embed(self, text: list[str]) -> list[list[float]]:
         """Generate an embedding for the given text.
