@@ -22,7 +22,7 @@ class DenseQdrantRetriever(BaseRetriever):
 
         search_results = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_dense_vector,
+            query=query_dense_vector,
             using='text-dense',
             limit=top_k,
             with_payload=True,

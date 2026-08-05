@@ -8,18 +8,10 @@ from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.loaders.docling_loader import DoclingLoader
-# from docling.document_converter import DocumentConverter
+from ragnar.retrieval.dense_qdrant_retriever import DenseQdrantRetriever
 
 
 async def main():
-
-    # converter = DocumentConverter()
-    # result = converter.convert(
-    #     Path('C:/Users/aster/Desktop/manuals/Hammer_Driver_Drill_HP0300.pdf'),
-    # )
-    # doc = result.document
-    # table_md = doc.tables[0].export_to_markdown(doc)
-    # return doc, table_md
 
     loader = DoclingLoader()
     documents = loader.load(
@@ -35,38 +27,17 @@ async def main():
     indexer = QdrantIndexer(
         dense_embedder=DenseFastEmbedding(),
         sparse_embedder=SparseFastEmbedding(),
-        collection_name='testtt',
+        collection_name='testttdbsrthsrth',
     )
 
     await indexer.index(chunks)
 
-    # Query to see first item
-    points, _ = indexer.client.scroll(
-        collection_name=indexer.collection_name,
-        with_vectors=True,
-        limit=1,
+    retriever = DenseQdrantRetriever(collection_name='testttdbsrthsrth')
+    search_results = await retriever.retrieve(
+        'What is the maximum \
+        torque of the Hammer Driver Drill HP0300?', top_k=5,
     )
-
-    if points:
-        point = points[0]
-        print('First indexed point:')
-        print(f"ID: {point.id}")
-
-        # Inspect vectors
-        if point.vector:
-            dense = point.vector.get('dense', [])
-            sparse = point.vector.get('sparse')
-
-            print(f"Dense vector dim: {len(dense)}")
-            print(f"Dense vector (first 5): {dense[:5]}")
-
-            if sparse:
-                print(f"Sparse vector indices: {sparse.indices[:5]}")
-                print(f"Sparse vector values: {sparse.values[:5]}")
-
-        print(f"Text: {point.payload['text'][:100]}...")
-    else:
-        print('No points in collection')
+    print(search_results)
 
 
 if __name__ == '__main__':
