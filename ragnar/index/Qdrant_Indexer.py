@@ -46,7 +46,7 @@ class QdrantIndexer(BaseIndexer):
             collection_kwargs = {
                 'collection_name': self.collection_name,
                 'vectors_config': {
-                    'text': VectorParams(
+                    'dense': VectorParams(
                         size=self.dense_embedder.dimension,
                         distance=Distance.COSINE,
                     ),
@@ -55,7 +55,7 @@ class QdrantIndexer(BaseIndexer):
 
             if self.sparse_embedder:
                 collection_kwargs['sparse_vectors_config'] = {
-                    'text': SparseVectorParams(),
+                    'sparse': SparseVectorParams(),
                 }
 
             self.client.create_collection(**collection_kwargs)
@@ -75,16 +75,16 @@ class QdrantIndexer(BaseIndexer):
             dense_emb = dense_embeddings[idx]
             sparse_emb = sparse_embeddings[idx] if sparse_embeddings else None
 
-            vectors = {'dense': dense_emb}
+            vector = {'dense': dense_emb}
             if sparse_emb:
-                vectors['sparse'] = sparse_emb
+                vector['sparse'] = sparse_emb
 
             point = PointStruct(
                 id=int(
                     hashlib.md5(chunk.id.encode()).
                     hexdigest(), 16,
                 ) % (10**8),
-                vectors=vectors,
+                vector=vector,
                 payload={
                     'chunk_id': chunk.id,
                     'text': chunk.text,

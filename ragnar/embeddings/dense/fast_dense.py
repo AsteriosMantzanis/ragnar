@@ -24,7 +24,7 @@ class DenseFastEmbedding(BaseEmbedding):
     @property
     def dimension(self) -> int:
         """Return the embedding dimension for the model."""
-        return self.embedder.embedding_size()
+        return self.embedder.embedding_size
 
     async def embed(
         self, texts: list[str],
@@ -67,7 +67,7 @@ class DenseFastEmbedding(BaseEmbedding):
             for attempt in range(3):  # Retry up to 3 times
                 try:
                     embeddings = list(self.embedder.passage_embed(batch))
-                    return embeddings
+                    return [emb.tolist() for emb in embeddings]
                 except Exception as e:
                     logger.error(f"Attempt {attempt + 1} failed: {e}")
                     if attempt == 2:  # last attempt, raise the exception

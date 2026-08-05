@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ragnar.chunkers.fixed_chunker import FixedChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
+from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.loaders.docling_loader import DoclingLoader
 # from docling.document_converter import DocumentConverter
@@ -32,8 +33,9 @@ async def main():
     print(chunks[0])
 
     indexer = QdrantIndexer(
-        embedder=DenseFastEmbedding(),
-        collection_name='manuals',
+        dense_embedder=DenseFastEmbedding(),
+        sparse_embedder=SparseFastEmbedding(),
+        collection_name='testtt',
     )
 
     await indexer.index(chunks)
@@ -41,6 +43,7 @@ async def main():
     # Query to see first item
     points, _ = indexer.client.scroll(
         collection_name=indexer.collection_name,
+        with_vectors=True,
         limit=1,
     )
 
@@ -48,8 +51,20 @@ async def main():
         point = points[0]
         print('First indexed point:')
         print(f"ID: {point.id}")
+
+        # Inspect vectors
+        if point.vector:
+            dense = point.vector.get('dense', [])
+            sparse = point.vector.get('sparse')
+
+            print(f"Dense vector dim: {len(dense)}")
+            print(f"Dense vector (first 5): {dense[:5]}")
+
+            if sparse:
+                print(f"Sparse vector indices: {sparse.indices[:5]}")
+                print(f"Sparse vector values: {sparse.values[:5]}")
+
         print(f"Text: {point.payload['text'][:100]}...")
-        print(f"Metadata: {point.payload}")
     else:
         print('No points in collection')
 

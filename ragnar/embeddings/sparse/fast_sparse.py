@@ -4,8 +4,9 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
-from fastembed import TextEmbedding
+from fastembed import SparseTextEmbedding
 from loguru import logger
+from qdrant_client.http.models import SparseVector
 
 from ragnar.embeddings.interfaces.base_embedding import BaseEmbedding
 load_dotenv()
@@ -22,7 +23,7 @@ class SparseFastEmbedding(BaseEmbedding):
     ):
         self.model = model
         self.max_concurrent = asyncio.Semaphore(max_concurrent)
-        self.embedder = TextEmbedding(model_name=self.model)
+        self.embedder = SparseTextEmbedding(model_name=self.model)
 
     @property
     def dimension(self) -> int:
@@ -31,7 +32,7 @@ class SparseFastEmbedding(BaseEmbedding):
     async def embed(
         self, texts: list[str],
         batch_size: int = 20,
-    ) -> list[list[float]]:
+    ) -> list[SparseVector]:
         """Split tasks in batch size and generate embeddings.
 
         Args:
@@ -39,7 +40,7 @@ class SparseFastEmbedding(BaseEmbedding):
             batch_size (int): The size of each batch for embedding.
 
         Returns:
-            list[list[float]]: The generated embedding vectors.
+            list[SparseVector]: The generated embedding vectors.
         """
         batches = [
             texts[i:i+batch_size]
@@ -55,7 +56,7 @@ class SparseFastEmbedding(BaseEmbedding):
             for emb in batch_embeddings
         ]
 
-    async def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+    async def _embed_batch(self, batch: list[str]) -> list[SparseVector]:
         """Generate an embedding for the given batch.
 
         Args:
@@ -63,13 +64,18 @@ class SparseFastEmbedding(BaseEmbedding):
             text (list[str]): The input text to be embedded.
 
         Returns:
-            list[list[float]]: The generated embedding vectors.
+            list[SparseVector]: The generated embedding vectors.
         """
         async with self.max_concurrent:
             for attempt in range(3):  # Retry up to 3 times
                 try:
                     embeddings = list(self.embedder.passage_embed(batch))
-                    return embeddings
+                    return [
+                        SparseVector(
+                            indices=e.indices.tolist(),
+                            values=e.values.tolist(),
+                        ) for e in embeddings
+                    ]
                 except Exception as e:
                     logger.error(f"Attempt {attempt + 1} failed: {e}")
                     if attempt == 2:  # last attempt, raise the exception
