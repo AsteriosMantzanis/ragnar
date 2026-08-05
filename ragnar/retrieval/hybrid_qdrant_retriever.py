@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import Prefetch
 from qdrant_client.models import Rrf
@@ -11,7 +13,10 @@ from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
 
 
 class HybridQdrantRetriever(BaseRetriever):
-    def __init__(self, url: str, collection_name: str):
+    def __init__(
+        self, collection_name: str,
+        url: str = os.getenv('QDRANT_URL', 'http://localhost:6333'),
+    ):
         self.client = QdrantClient(url=url)
         self.collection_name = collection_name
         self.sparse_embedding = SparseFastEmbedding()
