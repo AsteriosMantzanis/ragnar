@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 
+from qdrant_client.http.models import SparseVector
+
 
 class BaseEmbedding(ABC):
 
@@ -21,3 +23,7 @@ class BaseEmbedding(ABC):
         Returns:
             list[list[float]]: The generated embedding vectors.
         """
+
+    @abstractmethod
+    async def embed_query(self, query: str) -> list[float] | SparseVector:
+        pass

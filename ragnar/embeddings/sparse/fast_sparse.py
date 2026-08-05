@@ -82,3 +82,18 @@ class SparseFastEmbedding(BaseEmbedding):
                         raise
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
             raise RuntimeError('Embedding failed after all retries')
+
+    async def embed_query(self, query: str) -> SparseVector:
+        """Generate an embedding for the given query.
+
+        Args:
+            query (str): The input query to be embedded.
+
+        Returns:
+            SparseVector: The generated embedding vector.
+        """
+        embeddings = list(self.embedder.query_embed(query))
+        return SparseVector(
+            indices=embeddings[0].indices.tolist(),
+            values=embeddings[0].values.tolist(),
+        )

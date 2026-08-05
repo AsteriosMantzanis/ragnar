@@ -6,9 +6,17 @@ from abc import abstractmethod
 
 class BaseRetriever(ABC):
     @abstractmethod
-    def retrieve(
+    async def retrieve(
         self,
         query: str,
         top_k: int = 5,
     ) -> list[dict]:
-        pass
+        """Flat search — return chunk payloads."""
+
+    @abstractmethod
+    async def retrieve_hierarchical(
+        self,
+        query: str,
+        top_k: int = 5,
+    ) -> list[dict]:
+        """Hierarchical search — return sections + parent pages."""

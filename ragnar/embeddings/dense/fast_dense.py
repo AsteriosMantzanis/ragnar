@@ -74,3 +74,15 @@ class DenseFastEmbedding(BaseEmbedding):
                         raise
                     await asyncio.sleep(2 ** attempt)  # Exponential backoff
             raise RuntimeError('Embedding failed after all retries')
+
+    async def embed_query(self, query: str) -> list[float]:
+        """Generate an embedding for the given query.
+
+        Args:
+            query (str): The input query to be embedded.
+
+        Returns:
+            list[float]: The generated embedding vector.
+        """
+        embeddings = list(self.embedder.query_embed(query))
+        return embeddings[0].tolist()
