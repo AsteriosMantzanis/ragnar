@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import uuid
 
 from ragnar.chunkers.interfaces.base_chunker import BaseChunker
 from ragnar.models.chunk import Chunk
@@ -54,10 +54,9 @@ class PageChunker(BaseChunker):
             '\n'.join([element.text for element in buffer[1:]])
         page = buffer[0].page if buffer[0].page is not None else 0
 
-        # create page ids from document name and page number
-        page_id = hashlib.sha256(
-            f"{document.metadata['filename']}_{page}".encode(),
-        ).hexdigest()
+        # create page id from document name and page number
+        page_key = f"{document.metadata['filename']}_{page}"
+        page_id = str(uuid.uuid5(uuid.NAMESPACE_URL, page_key))
 
         return [
             Chunk(

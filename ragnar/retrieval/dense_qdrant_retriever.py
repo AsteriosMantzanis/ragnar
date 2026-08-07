@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from qdrant_client import QdrantClient
+from qdrant_client.http.models import FieldCondition
+from qdrant_client.http.models import Filter
+from qdrant_client.http.models import MatchAny
 
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
@@ -29,3 +33,46 @@ class DenseQdrantRetriever(BaseRetriever):
         )
 
         return search_results
+
+    async def retrieve_hierarchical(
+        self, query: str,
+        parent_collection_name: str, child_collection_name: str,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+
+        query_dense_vector = await self.embedding.embed_query(query)
+
+        # 1. Search sections
+        section_results = self.client.query_points(
+            collection_name=child_collection_name,
+            query=query_dense_vector,
+            using='text-dense',
+            limit=top_k,
+            with_payload=True,
+        )
+
+        # 2. Extract parent page IDs
+        parent_page_ids = set()
+        for result in section_results.points:
+            page_ids = result.payload.get('parent_page_ids', [])
+            parent_page_ids.update(page_ids)
+
+        # # 3. Fetch parent pages
+        parent_pages, _ = self.client.scroll(
+            collection_name=parent_collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key='chunk_id',
+                        match=MatchAny(any=list(parent_page_ids)),
+                    ),
+                ],
+            ),
+            with_payload=True,
+        )
+
+        # # 4. Return both
+        return {
+            'sections': section_results,
+            'pages': parent_pages,
+        }
