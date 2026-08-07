@@ -14,18 +14,21 @@ from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
 
 class SparseQdrantRetriever(BaseRetriever):
     def __init__(
-        self, collection_name: str,
+        self,
         url: str = os.getenv('QDRANT_URL', 'http://localhost:6333'),
     ):
         self.client = QdrantClient(url=url)
-        self.collection_name = collection_name
         self.embedding = SparseFastEmbedding()
 
-    async def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
+    async def retrieve(
+        self, query: str,
+        collection_name: str, top_k: int = 5,
+    ) -> list[dict]:
+
         query_sparse_vector = await self.embedding.embed_query(query)
 
         search_results = self.client.query_points(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             query=query_sparse_vector,
             using='text-sparse',
             limit=top_k,

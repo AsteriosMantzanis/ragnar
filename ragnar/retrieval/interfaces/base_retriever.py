@@ -10,6 +10,7 @@ class BaseRetriever(ABC):
     async def retrieve(
         self,
         query: str,
+        collection_name: str,
         top_k: int = 5,
     ) -> list[dict]:
         """Flat search — return chunk payloads."""
