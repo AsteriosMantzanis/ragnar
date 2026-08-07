@@ -52,7 +52,7 @@ class HybridQdrantRetriever(BaseRetriever):
             with_payload=True,
         )
 
-        return search_results
+        return [p.payload for p in search_results.points]
 
     async def retrieve_hierarchical(
         self, query: str,
@@ -104,6 +104,6 @@ class HybridQdrantRetriever(BaseRetriever):
 
         # # 4. Return both
         return {
-            'sections': section_results,
-            'pages': parent_pages,
+            'sections': [p.payload for p in section_results.points],
+            'pages': [p.payload for p in parent_pages],
         }

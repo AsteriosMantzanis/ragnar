@@ -9,7 +9,7 @@ from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.loaders.docling_loader import DoclingLoader
-from ragnar.retrieval.dense_qdrant_retriever import DenseQdrantRetriever
+from ragnar.retrieval.hybrid_qdrant_retriever import HybridQdrantRetriever
 
 
 async def main():
@@ -39,12 +39,22 @@ async def main():
     )
     await indexer_sections.index(sections)
 
-    retriever = DenseQdrantRetriever(collection_name='ragnar')
+    retriever = HybridQdrantRetriever()
     search_results = await retriever.retrieve_hierarchical(
         'What is the maximum \
         torque of the Hammer Driver Drill HP0300?', top_k=5,
+        parent_collection_name='ragnar_pages',
+        child_collection_name='ragnar_sections',
     )
-    print(search_results)
+    print('Sections:')
+    for section in search_results['sections']:
+        print(section['text'])
+        print('=' * 80)
+
+    print('\nPages:')
+    for page in search_results['pages']:
+        print(page['text'])
+        print('=' * 80)
 
 
 if __name__ == '__main__':

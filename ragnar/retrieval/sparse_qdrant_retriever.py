@@ -35,7 +35,7 @@ class SparseQdrantRetriever(BaseRetriever):
             with_payload=True,
         )
 
-        return search_results
+        return [p.payload for p in search_results.points]
 
     async def retrieve_hierarchical(
         self, query: str,
