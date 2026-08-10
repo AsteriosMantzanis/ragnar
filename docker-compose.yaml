@@ -1,16 +1,15 @@
 version: '3.8'
 
 services:
-  # ollama:
-  #   image: ollama/ollama
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   environment:
-  #     - EMBED_MODEL=${EMBED_MODEL}
-  #     - LLM_MODEL=${LLM_MODEL}
-  #   entrypoint: /bin/sh -c "ollama serve & sleep 2 && ollama pull $$EMBED_MODEL && ollama pull $$LLM_MODEL && wait"
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - LLM_MODEL=${LLM_MODEL}
+    entrypoint: /bin/sh -c "ollama serve & sleep 2 && ollama pull $$LLM_MODEL && wait"
 
   qdrant:
     image: qdrant/qdrant:latest

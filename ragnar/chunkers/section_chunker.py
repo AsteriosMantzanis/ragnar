@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from uuid import uuid4
 
 from ragnar.chunkers.interfaces.base_chunker import BaseChunker
 from ragnar.models.chunk import Chunk
@@ -73,7 +72,11 @@ class SectionChunker(BaseChunker):
         ]
 
         # section ids
-        section_id = uuid4().hex
+        section_key = (
+            f"{document.metadata['filename']}_section_"
+            f"{buffer[0].text[:50]}"
+        )
+        section_id = str(uuid.uuid5(uuid.NAMESPACE_URL, section_key))
 
         return [
             Chunk(

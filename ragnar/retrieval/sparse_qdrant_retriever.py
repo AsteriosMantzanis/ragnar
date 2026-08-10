@@ -75,6 +75,6 @@ class SparseQdrantRetriever(BaseRetriever):
 
         # # 4. Return both
         return {
-            'sections': section_results,
-            'pages': parent_pages,
+            'sections': [p.payload for p in section_results.points],
+            'pages': [p.payload for p in parent_pages],
         }

@@ -7,8 +7,11 @@ from ragnar.chunkers.page_chunker import PageChunker
 from ragnar.chunkers.section_chunker import SectionChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
+from ragnar.generation.simple_generator import Generator
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
+from ragnar.llm.ollama_llm import OllamaLLMAdapter
 from ragnar.loaders.docling_loader import DoclingLoader
+from ragnar.prompts.prompt_loader import PromptLoader
 from ragnar.retrieval.hybrid_qdrant_retriever import HybridQdrantRetriever
 
 
@@ -39,22 +42,29 @@ async def main():
     )
     await indexer_sections.index(sections)
 
+    query = 'What is the maximum \
+        torque of the Hammer Driver Drill HP0300?'
+
     retriever = HybridQdrantRetriever()
     search_results = await retriever.retrieve_hierarchical(
-        'What is the maximum \
-        torque of the Hammer Driver Drill HP0300?', top_k=5,
+        query=query, top_k=5,
         parent_collection_name='ragnar_pages',
         child_collection_name='ragnar_sections',
     )
-    print('Sections:')
-    for section in search_results['sections']:
-        print(section['text'])
-        print('=' * 80)
 
-    print('\nPages:')
-    for page in search_results['pages']:
-        print(page['text'])
-        print('=' * 80)
+    # Generation
+    llm_adapter = OllamaLLMAdapter()
+    prompt_loader = PromptLoader()
+    generator = Generator(llm_adapter, prompt_loader)
+
+    answer = await generator.generate(
+        query=query,
+        context=search_results['sections'],
+        prompt_template='simple_qa',
+    )
+
+    print(f"\nQuery: {query}")
+    print(f"\nAnswer:\n{answer}")
 
 
 if __name__ == '__main__':
