@@ -73,6 +73,8 @@ class DenseQdrantRetriever(BaseRetriever):
                 ],
             ),
             with_payload=True,
+
+
         )
 
         # # 4. Return both

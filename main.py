@@ -12,6 +12,7 @@ from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.llm.ollama_llm import OllamaLLMAdapter
 from ragnar.loaders.docling_loader import DoclingLoader
 from ragnar.prompts.prompt_loader import PromptLoader
+from ragnar.rerank.fast_embed_reranker import FastEmbedReranker
 from ragnar.retrieval.hybrid_qdrant_retriever import HybridQdrantRetriever
 
 
@@ -52,14 +53,26 @@ async def main():
         child_collection_name='ragnar_sections',
     )
 
+    # reranking
+    reranker = FastEmbedReranker()
+    scored_results = await reranker.score_hierarchical(
+        query=query,
+        results=search_results,
+        child_entity='sections',
+    )
+    print(f"lfg {scored_results}")
+
     # Generation
     llm_adapter = OllamaLLMAdapter()
     prompt_loader = PromptLoader()
+
     generator = Generator(llm_adapter, prompt_loader)
+
+    print(search_results)
 
     answer = await generator.generate(
         query=query,
-        context=search_results['sections'],
+        context=search_results['pages'],
         prompt_template='simple_qa',
     )
 

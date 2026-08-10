@@ -29,12 +29,14 @@ class OllamaLLMAdapter(BaseLLMAdapter):
                         'prompt': prompt,
                         'stream': False,
                     },
-                    timeout=60.0,
+                    timeout=120.0,
                 )
                 response.raise_for_status()
                 return response.json()['response']
-            except Exception as e:
-                logger.error(f"Attempt {attempt + 1} failed: {e}")
+            except httpx.HTTPError as e:
+                logger.exception(
+                    f"Attempt {attempt + 1} failed with {type(e).__name__}",
+                )
                 if attempt == 2:
                     raise
                 await asyncio.sleep(2 ** attempt)
