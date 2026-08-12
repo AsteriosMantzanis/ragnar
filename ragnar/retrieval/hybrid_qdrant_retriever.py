@@ -28,7 +28,7 @@ class HybridQdrantRetriever(BaseRetriever):
     async def retrieve(
         self, query: str,
         collection_name: str,
-        top_k: int = 5,
+        top_k: int = 20,
     ) -> list[dict]:
 
         query_sparse_vector = await self.sparse_embedding.embed_query(query)
@@ -40,16 +40,15 @@ class HybridQdrantRetriever(BaseRetriever):
                 Prefetch(
                     query=query_sparse_vector,
                     using='text-sparse',
-                    limit=top_k,
                 ),
                 Prefetch(
                     query=query_dense_vector,
                     using='text-dense',
-                    limit=top_k,
                 ),
             ],
             query=RrfQuery(rrf=Rrf()),
             with_payload=True,
+            limit=top_k,
         )
 
         return [p.payload for p in search_results.points]
@@ -57,7 +56,7 @@ class HybridQdrantRetriever(BaseRetriever):
     async def retrieve_hierarchical(
         self, query: str,
         parent_collection_name: str, child_collection_name: str,
-        top_k: int = 5,
+        top_k: int = 20,
     ) -> dict[str, Any]:
 
         query_sparse_vector = await self.sparse_embedding.embed_query(query)
@@ -70,16 +69,15 @@ class HybridQdrantRetriever(BaseRetriever):
                 Prefetch(
                     query=query_sparse_vector,
                     using='text-sparse',
-                    limit=top_k,
                 ),
                 Prefetch(
                     query=query_dense_vector,
                     using='text-dense',
-                    limit=top_k,
                 ),
             ],
             query=RrfQuery(rrf=Rrf()),
             with_payload=True,
+            limit=top_k,
         )
 
         # 2. Extract parent page IDs

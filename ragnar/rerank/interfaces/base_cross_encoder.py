@@ -7,7 +7,11 @@ from typing import Any
 
 class BaseCrossEncoder(ABC):
     @abstractmethod
-    async def score(self, query: str, results: list[dict]) -> list[dict]:
+    async def score(
+        self,
+        query: str,
+        results: list[dict],
+    ) -> list[dict]:
         pass
 
     @abstractmethod

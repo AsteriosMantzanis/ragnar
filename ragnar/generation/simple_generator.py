@@ -24,3 +24,19 @@ class Generator:
             prompt_template, context=context_text, query=query,
         )
         return await self.llm.generate(prompt)
+
+    async def generate_hierarchical(
+        self,
+        query: str,
+        context: dict[str, list[dict]],
+        generation_entity: str,
+        prompt_template: str = 'simple_qa',
+    ) -> str:
+        context_text = '\n\n'.join([
+            c['text']
+            for c in context[generation_entity]
+        ])
+        prompt = self.prompt_loader.load(
+            prompt_template, context=context_text, query=query,
+        )
+        return await self.llm.generate(prompt)

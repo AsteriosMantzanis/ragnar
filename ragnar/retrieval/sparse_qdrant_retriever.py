@@ -22,7 +22,7 @@ class SparseQdrantRetriever(BaseRetriever):
 
     async def retrieve(
         self, query: str,
-        collection_name: str, top_k: int = 5,
+        collection_name: str, top_k: int = 20,
     ) -> list[dict]:
 
         query_sparse_vector = await self.embedding.embed_query(query)
@@ -40,7 +40,7 @@ class SparseQdrantRetriever(BaseRetriever):
     async def retrieve_hierarchical(
         self, query: str,
         parent_collection_name: str, child_collection_name: str,
-        top_k: int = 5,
+        top_k: int = 20,
     ) -> dict[str, Any]:
         query_sparse_vector = await self.embedding.embed_query(query)
 

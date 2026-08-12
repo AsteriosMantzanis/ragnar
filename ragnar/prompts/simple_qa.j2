@@ -1,10 +1,27 @@
-Answer the question based on the provided context.
+Answer the question using only the information provided in the context.
+
+Carefully review the context before answering. Identify the information that is directly relevant to the question and base your answer only on that information.
+
+Every factual claim in your answer must be supported by the provided context. Do not invent, assume, infer, or fill in missing information from your general knowledge.
+
+If the context does not contain enough information to answer the question confidently, say so explicitly rather than guessing.
+
+Before finalizing your answer, carefully review every factual statement you are about to make and verify that it is supported by the context. Pay particular attention to:
+- numbers and measurements
+- model names and identifiers
+- dates
+- technical specifications
+- quantities
+- units
+- conditions and limitations
+- negations such as "not", "cannot", or "only"
 
 {% if context %}
 Context:
 {{ context }}
 {% endif %}
 
-Question: {{ query }}
+Question:
+{{ query }}
 
 Answer:

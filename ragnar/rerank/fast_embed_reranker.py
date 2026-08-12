@@ -1,45 +1,84 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from dotenv import load_dotenv
 from fastembed.rerank.cross_encoder import TextCrossEncoder
+from loguru import logger
 
 from ragnar.rerank.interfaces.base_cross_encoder import BaseCrossEncoder
 load_dotenv()
 
 
 class FastEmbedReranker(BaseCrossEncoder):
-    def __init__(self):
+    def __init__(self, score_threshold: float = 0.5):
         self.model_name = os.getenv(
             'rerank_model', 'jinaai/jina-reranker-v2-base-multilingual',
         )
         self.model = TextCrossEncoder(self.model_name)
+        self.score_threshold = score_threshold
 
     async def score(self, query: str, results: list[dict]) -> list[dict]:
-        texts = [(query, i['text']) for i in results]
-        scores = self.model.rerank(query=query, documents=texts)
-        for result, score in zip(results, scores):
-            result['rerank_score'] = score
-        return sorted(results, key=lambda x: x['rerank_score'], reverse=True)
+        logger.info(f"Starting reranking for {len(results)} results")
+        logger.debug(f"Query: {query[:50]}...")
+
+        texts = [r['text'] for r in results]
+        scores = self.model.rerank(query, texts)
+
+        for i, (result, score) in enumerate(zip(results, scores)):
+            result['rerank_score'] = float(score)  # Direct float, not .score
+            logger.debug(f"Result {i+1}: score={result['rerank_score']:.3f}")
+
+        filtered = [
+            r for r in results if r['rerank_score']
+            >= self.score_threshold
+        ]
+        ranked = sorted(
+            filtered, key=lambda x: x['rerank_score'], reverse=True,
+        )
+
+        logger.info(
+            f"Reranking complete: {len(ranked)}/{len(results)}"
+            f" results above threshold {self.score_threshold}",
+        )
+
+        return ranked
 
     async def score_hierarchical(
-        self, query: str,
-        results: dict[str, Any],
-        child_entity: str,
-    ) -> dict[str, Any]:
+        self, query: str, results: dict,
+        child_entity: str = 'sections',
+    ) -> dict:
+        logger.info(
+            f"Starting hierarchical reranking for entity: {child_entity}",
+        )
+        logger.debug(f"Query: {query[:50]}...")
 
-        texts = [i['text'] for i in results[child_entity]]
-        scores = self.model.rerank(query=query, documents=texts)
+        child_results = results[child_entity]
+        logger.debug(f"Reranking {len(child_results)} {child_entity}")
 
-        for result, score in zip(results[child_entity], scores):
-            result['rerank_score'] = score
+        texts = [item['text'] for item in child_results]
+        scores = self.model.rerank(query, texts)
 
+        for i, (item, score) in enumerate(zip(child_results, scores)):
+            item['rerank_score'] = float(score)  # Direct float
+            logger.debug(
+                f"{child_entity} {i+1}: score={item['rerank_score']:.3f}",
+            )
+
+        filtered = [
+            r for r in child_results if r['rerank_score']
+            >= self.score_threshold
+        ]
         results[child_entity] = sorted(
-            results[child_entity],
+            filtered,
             key=lambda x: x['rerank_score'],
             reverse=True,
+        )
+
+        logger.info(
+            f"Hierarchical reranking complete:"
+            f" {len(results[child_entity])}/{len(child_results)}"
+            ' above threshold {self.score_threshold}',
         )
 
         return results

@@ -8,6 +8,7 @@ from ragnar.chunkers.section_chunker import SectionChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.generation.simple_generator import Generator
+from ragnar.grounding.hf_grounding import HF_Grounding
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
 from ragnar.llm.ollama_llm import OllamaLLMAdapter
 from ragnar.loaders.docling_loader import DoclingLoader
@@ -48,7 +49,7 @@ async def main():
 
     retriever = HybridQdrantRetriever()
     search_results = await retriever.retrieve_hierarchical(
-        query=query, top_k=5,
+        query=query, top_k=20,
         parent_collection_name='ragnar_pages',
         child_collection_name='ragnar_sections',
     )
@@ -60,7 +61,6 @@ async def main():
         results=search_results,
         child_entity='sections',
     )
-    print(f"lfg {scored_results}")
 
     # Generation
     llm_adapter = OllamaLLMAdapter()
@@ -68,13 +68,16 @@ async def main():
 
     generator = Generator(llm_adapter, prompt_loader)
 
-    print(search_results)
-
-    answer = await generator.generate(
+    answer = await generator.generate_hierarchical(
         query=query,
-        context=search_results['pages'],
+        context=search_results,
         prompt_template='simple_qa',
+        generation_entity='sections',
     )
+
+    # grounding
+    grounding = HF_Grounding()
+    await grounding.ground_hierarchical(answer, scored_results, 'sections')
 
     print(f"\nQuery: {query}")
     print(f"\nAnswer:\n{answer}")

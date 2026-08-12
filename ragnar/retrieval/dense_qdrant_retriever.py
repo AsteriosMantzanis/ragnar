@@ -23,7 +23,7 @@ class DenseQdrantRetriever(BaseRetriever):
     async def retrieve(
         self, query: str,
         collection_name: str,
-        top_k: int = 5,
+        top_k: int = 20,
     ) -> list[dict]:
 
         query_dense_vector = await self.embedding.embed_query(query)
