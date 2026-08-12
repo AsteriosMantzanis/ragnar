@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ragnar.chunkers.page_chunker import PageChunker
 from ragnar.chunkers.section_chunker import SectionChunker
+from ragnar.chunkers.subsection_chunker import SubsectionChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.generation.simple_generator import Generator
@@ -26,32 +26,40 @@ async def main():
     print(f"Loaded {len(documents)} documents.")
     print(documents[0])
 
-    page = PageChunker().chunk(documents[0])
+    subsections = SubsectionChunker().chunk(documents[0])
     sections = SectionChunker().chunk(documents[0])
 
-    indexer_pages = QdrantIndexer(
+    indexer_subsections = QdrantIndexer(
         dense_embedder=DenseFastEmbedding(),
         sparse_embedder=SparseFastEmbedding(),
-        collection_name='ragnar_pages',
+        collection_name='subsections',
     )
 
-    await indexer_pages.index(page)
+    await indexer_subsections.index(subsections)
 
     indexer_sections = QdrantIndexer(
         dense_embedder=DenseFastEmbedding(),
         sparse_embedder=SparseFastEmbedding(),
-        collection_name='ragnar_sections',
+        collection_name='sections',
     )
+
     await indexer_sections.index(sections)
 
-    query = 'What is the maximum \
-        torque of the Hammer Driver Drill HP0300?'
+    query = 'What are the drilling capacities?'
 
     retriever = HybridQdrantRetriever()
     search_results = await retriever.retrieve_hierarchical(
         query=query, top_k=20,
-        parent_collection_name='ragnar_pages',
-        child_collection_name='ragnar_sections',
+        parent_collection_name='sections',
+        child_collection_name='subsections',
+        linkage_id='parent_section_id',
+    )
+
+    search_results = await retriever.retrieve_hierarchical(
+        query=query, top_k=20,
+        parent_collection_name='sections',
+        child_collection_name='subsections',
+        linkage_id='parent_section_id',
     )
 
     # reranking
@@ -59,7 +67,7 @@ async def main():
     scored_results = await reranker.score_hierarchical(
         query=query,
         results=search_results,
-        child_entity='sections',
+        child_entity='subsections',
     )
 
     # Generation
@@ -70,14 +78,14 @@ async def main():
 
     answer = await generator.generate_hierarchical(
         query=query,
-        context=search_results,
+        context=scored_results,
         prompt_template='simple_qa',
-        generation_entity='sections',
+        generation_entity='subsections',
     )
 
     # grounding
     grounding = HF_Grounding()
-    await grounding.ground_hierarchical(answer, scored_results, 'sections')
+    await grounding.ground_hierarchical(answer, scored_results, 'subsections')
 
     print(f"\nQuery: {query}")
     print(f"\nAnswer:\n{answer}")

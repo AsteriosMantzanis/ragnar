@@ -21,6 +21,7 @@ class BaseRetriever(ABC):
         query: str,
         parent_collection_name: str,
         child_collection_name: str,
+        linkage_id: str,
         top_k: int = 5,
     ) -> dict[str, Any]:
         """Hierarchical search — return sections + parent pages."""

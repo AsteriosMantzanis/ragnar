@@ -39,13 +39,15 @@ class SparseQdrantRetriever(BaseRetriever):
 
     async def retrieve_hierarchical(
         self, query: str,
-        parent_collection_name: str, child_collection_name: str,
+        parent_collection_name: str,
+        child_collection_name: str,
+        linkage_id: str,
         top_k: int = 20,
     ) -> dict[str, Any]:
         query_sparse_vector = await self.embedding.embed_query(query)
 
         # 1. Search sections
-        section_results = self.client.query_points(
+        child_results = self.client.query_points(
             collection_name=child_collection_name,
             query=query_sparse_vector,
             using='text-sparse',
@@ -54,19 +56,19 @@ class SparseQdrantRetriever(BaseRetriever):
         )
 
         # 2. Extract parent page IDs
-        parent_page_ids = set()
-        for result in section_results.points:
-            page_ids = result.payload.get('parent_page_ids', [])
-            parent_page_ids.update(page_ids)
+        link_ids = set()
+        for result in child_results.points:
+            ids = result.payload.get(linkage_id, [])
+            link_ids.update(ids)
 
         # # 3. Fetch parent pages
-        parent_pages, _ = self.client.scroll(
+        parent_results, _ = self.client.scroll(
             collection_name=parent_collection_name,
             scroll_filter=Filter(
                 must=[
                     FieldCondition(
                         key='chunk_id',
-                        match=MatchAny(any=list(parent_page_ids)),
+                        match=MatchAny(any=list(link_ids)),
                     ),
                 ],
             ),
@@ -75,6 +77,6 @@ class SparseQdrantRetriever(BaseRetriever):
 
         # # 4. Return both
         return {
-            'sections': [p.payload for p in section_results.points],
-            'pages': [p.payload for p in parent_pages],
+            child_collection_name: [p.payload for p in child_results.points],
+            parent_collection_name: [p.payload for p in parent_results],
         }

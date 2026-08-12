@@ -7,18 +7,24 @@ from fastembed.rerank.cross_encoder import TextCrossEncoder
 from loguru import logger
 
 from ragnar.rerank.interfaces.base_cross_encoder import BaseCrossEncoder
+
 load_dotenv()
 
 
 class FastEmbedReranker(BaseCrossEncoder):
-    def __init__(self, score_threshold: float = 0.5):
+    def __init__(self, top_k: int = 5):
         self.model_name = os.getenv(
             'rerank_model', 'jinaai/jina-reranker-v2-base-multilingual',
         )
         self.model = TextCrossEncoder(self.model_name)
-        self.score_threshold = score_threshold
+        logger.info(
+            f"Initialized FastEmbedReranker with model: {self.model_name}",
+        )
+        self.top_k = top_k
 
-    async def score(self, query: str, results: list[dict]) -> list[dict]:
+    async def score(
+        self, query: str, results: list[dict],
+    ) -> list[dict]:
         logger.info(f"Starting reranking for {len(results)} results")
         logger.debug(f"Query: {query[:50]}...")
 
@@ -26,23 +32,20 @@ class FastEmbedReranker(BaseCrossEncoder):
         scores = self.model.rerank(query, texts)
 
         for i, (result, score) in enumerate(zip(results, scores)):
-            result['rerank_score'] = float(score)  # Direct float, not .score
+            result['rerank_score'] = float(score)
             logger.debug(f"Result {i+1}: score={result['rerank_score']:.3f}")
 
-        filtered = [
-            r for r in results if r['rerank_score']
-            >= self.score_threshold
-        ]
         ranked = sorted(
-            filtered, key=lambda x: x['rerank_score'], reverse=True,
+            results, key=lambda x: x['rerank_score'], reverse=True,
         )
+        top_results = ranked[:self.top_k]
 
         logger.info(
-            f"Reranking complete: {len(ranked)}/{len(results)}"
-            f" results above threshold {self.score_threshold}",
+            f"Reranking complete: returning top"
+            f" {len(top_results)}/{len(results)} results",
         )
 
-        return ranked
+        return top_results
 
     async def score_hierarchical(
         self, query: str, results: dict,
@@ -60,25 +63,21 @@ class FastEmbedReranker(BaseCrossEncoder):
         scores = self.model.rerank(query, texts)
 
         for i, (item, score) in enumerate(zip(child_results, scores)):
-            item['rerank_score'] = float(score)  # Direct float
+            item['rerank_score'] = float(score)
             logger.debug(
                 f"{child_entity} {i+1}: score={item['rerank_score']:.3f}",
             )
 
-        filtered = [
-            r for r in child_results if r['rerank_score']
-            >= self.score_threshold
-        ]
-        results[child_entity] = sorted(
-            filtered,
+        ranked = sorted(
+            child_results,
             key=lambda x: x['rerank_score'],
             reverse=True,
         )
+        results[child_entity] = ranked[:self.top_k]
 
         logger.info(
-            f"Hierarchical reranking complete:"
-            f" {len(results[child_entity])}/{len(child_results)}"
-            ' above threshold {self.score_threshold}',
+            f"Hierarchical reranking complete: "
+            f"returning top {len(results[child_entity])}/{len(child_results)}",
         )
 
         return results

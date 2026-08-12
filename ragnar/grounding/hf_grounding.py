@@ -27,6 +27,18 @@ class HF_Grounding(BaseGrounding):
             f"Starting grounding for answer with {len(sources)} sources",
         )
 
+        # Handle empty sources
+        if not sources:
+            logger.warning('No sources available for grounding')
+            return [{
+                'claim': answer,
+                'status': 'unsupported',
+                'grounded': False,
+                'entailment_score': 0.0,
+                'contradiction_score': 0.0,
+                'evidence': None,
+            }]
+
         claims = [s.strip() for s in answer.split('.') if s.strip()]
         logger.debug(f"Extracted {len(claims)} claims from answer")
 
@@ -91,6 +103,22 @@ class HF_Grounding(BaseGrounding):
         logger.info(
             f"Starting hierarchical grounding for entity: {grounding_entity}",
         )
+
+        # Handle empty sources
+        source_dicts = sources[grounding_entity]
+
+        if not source_dicts:
+            logger.warning(
+                f"No {grounding_entity} sources available for grounding",
+            )
+            return [{
+                'claim': answer,
+                'status': 'unsupported',
+                'grounded': False,
+                'entailment_score': 0.0,
+                'contradiction_score': 0.0,
+                'evidence': None,
+            }]
 
         claims = [s.strip() for s in answer.split('.') if s.strip()]
         source_dicts = sources[grounding_entity]
