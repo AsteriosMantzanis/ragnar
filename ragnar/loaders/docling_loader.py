@@ -5,7 +5,6 @@ from pathlib import Path
 
 from docling.document_converter import DocumentConverter
 from docling_core.types.doc import TableItem
-from loguru import logger
 
 from ragnar.loaders.interfaces.base_loader import BaseLoader
 from ragnar.models.document import Document
@@ -64,9 +63,6 @@ class DoclingLoader(BaseLoader):
                 ),
             )
             elements.append(element)
-            logger.info(
-                f"Processed element: {element.label} Text: {element.text}",
-            )
 
         doc_id = hashlib.sha256(str(path).encode()).hexdigest()[:16]
 

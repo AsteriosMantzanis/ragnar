@@ -31,7 +31,7 @@ class SparseFastEmbedding(BaseEmbedding):
 
     async def embed(
         self, texts: list[str],
-        batch_size: int = 20,
+        batch_size: int = 5,
     ) -> list[SparseVector]:
         """Split tasks in batch size and generate embeddings.
 
