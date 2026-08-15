@@ -12,7 +12,7 @@ load_dotenv()
 
 
 class FastEmbedReranker(BaseCrossEncoder):
-    def __init__(self, top_k: int = 5):
+    def __init__(self):
         self.model_name = os.getenv(
             'rerank_model', 'jinaai/jina-reranker-v2-base-multilingual',
         )
@@ -20,10 +20,9 @@ class FastEmbedReranker(BaseCrossEncoder):
         logger.info(
             f"Initialized FastEmbedReranker with model: {self.model_name}",
         )
-        self.top_k = top_k
 
     async def score(
-        self, query: str, results: list[dict],
+        self, query: str, results: list[dict], top_k: int = 5,
     ) -> list[dict]:
         logger.info(f"Starting reranking for {len(results)} results")
         logger.debug(f"Query: {query[:50]}...")
@@ -38,7 +37,7 @@ class FastEmbedReranker(BaseCrossEncoder):
         ranked = sorted(
             results, key=lambda x: x['rerank_score'], reverse=True,
         )
-        top_results = ranked[:self.top_k]
+        top_results = ranked[:top_k]
 
         logger.info(
             f"Reranking complete: returning top"
@@ -49,7 +48,8 @@ class FastEmbedReranker(BaseCrossEncoder):
 
     async def score_hierarchical(
         self, query: str, results: dict,
-        child_entity: str = 'sections',
+        child_entity: str,
+        top_k: int = 5,
     ) -> dict:
         logger.info(
             f"Starting hierarchical reranking for entity: {child_entity}",
@@ -73,7 +73,7 @@ class FastEmbedReranker(BaseCrossEncoder):
             key=lambda x: x['rerank_score'],
             reverse=True,
         )
-        results[child_entity] = ranked[:self.top_k]
+        results[child_entity] = ranked[:top_k]
 
         logger.info(
             f"Hierarchical reranking complete: "

@@ -11,12 +11,15 @@ class BaseCrossEncoder(ABC):
         self,
         query: str,
         results: list[dict],
+        top_k: int,
     ) -> list[dict]:
         pass
 
     @abstractmethod
     async def score_hierarchical(
-        self, query: str, results: dict[str, Any],
+        self, query: str,
+        results: dict[str, Any],
         child_entity: str,
+        top_k: int,
     ) -> dict[str, Any]:
         pass

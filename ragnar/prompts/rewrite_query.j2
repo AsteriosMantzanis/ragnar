@@ -1,5 +1,16 @@
-Rewrite this query to be more specific and retrieval-friendly.
+Rewrite the user's query to make it more specific, precise, and retrieval-friendly.
 
-Original: {{ query }}
+Requirements:
+- Preserve the original intent exactly.
+- Do not answer the question.
+- Do not add information that is not present in the original query.
+- Expand ambiguous references when possible using information already present in the query.
+- Include important entities, product names, model numbers, technical terms, and constraints.
+- Remove unnecessary words and conversational phrasing.
+- Produce a single concise search query.
+- Do not provide explanations, commentary, or multiple alternatives.
+
+Original:
+{{ query }}
 
 Rewritten:
