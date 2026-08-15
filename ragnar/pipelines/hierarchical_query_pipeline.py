@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ragnar.pipelines.query_pipeline import BaseQueryPipeline
+from ragnar.pipelines.interfaces.query_pipeline import BaseQueryPipeline
 
 
 class HierarchicalQueryPipeline(BaseQueryPipeline):
