@@ -5,9 +5,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
-from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
-from ragnar.index.Qdrant_Indexer import QdrantIndexer
+from ragnar.chunkers.interfaces.base_chunker import BaseChunker
+from ragnar.index.interfaces.base_indexer import BaseIndexer
 from ragnar.loaders.interfaces.base_loader import BaseLoader
 from ragnar.pipelines.interfaces.indexing_pipeline import BaseIndexPipeline
 
@@ -19,8 +18,10 @@ class HierarchicalIndexPipeline(BaseIndexPipeline):
     def __init__(
         self,
         loader: BaseLoader,
-        parent_chunker,
-        child_chunker,
+        parent_chunker: BaseChunker,
+        child_chunker: BaseChunker,
+        parent_indexer: BaseIndexer,
+        child_indexer: BaseIndexer,
         parent_collection_name: str,
         child_collection_name: str,
         store_url: str = 'http://localhost:6333',
@@ -30,21 +31,9 @@ class HierarchicalIndexPipeline(BaseIndexPipeline):
         self.child_chunker = child_chunker
         self.parent_collection_name = parent_collection_name
         self.child_collection_name = child_collection_name
+        self.parent_indexer = parent_indexer
+        self.child_indexer = child_indexer
         self.store_url = os.getenv('QDRANT_URL')
-
-        self.parent_indexer = QdrantIndexer(
-            dense_embedder=DenseFastEmbedding(),
-            sparse_embedder=SparseFastEmbedding(),
-            collection_name=parent_collection_name,
-            url=self.store_url if self.store_url else store_url,
-        )
-
-        self.child_indexer = QdrantIndexer(
-            dense_embedder=DenseFastEmbedding(),
-            sparse_embedder=SparseFastEmbedding(),
-            collection_name=child_collection_name,
-            url=self.store_url if self.store_url else store_url,
-        )
 
         logger.info(
             f"Hierarchical indexing: {child_collection_name} / "

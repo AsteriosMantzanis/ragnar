@@ -5,9 +5,8 @@ from pathlib import Path
 
 from loguru import logger
 
-from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
-from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
-from ragnar.index.Qdrant_Indexer import QdrantIndexer
+from ragnar.chunkers.interfaces.base_chunker import BaseChunker
+from ragnar.index.interfaces.base_indexer import BaseIndexer
 from ragnar.loaders.interfaces.base_loader import BaseLoader
 from ragnar.pipelines.interfaces.indexing_pipeline import BaseIndexPipeline
 
@@ -18,20 +17,16 @@ class FlatIndexPipeline(BaseIndexPipeline):
     def __init__(
         self,
         loader: BaseLoader,
-        chunker,
+        chunker: BaseChunker,
         collection_name: str,
+        indexer: BaseIndexer,
         store_url: str = 'http://localhost:6333',
     ):
         super().__init__(loader)
         self.chunker = chunker
         self.collection_name = collection_name
         self.store_url = os.getenv('QDRANT_URL')
-        self.indexer = QdrantIndexer(
-            dense_embedder=DenseFastEmbedding(),
-            sparse_embedder=SparseFastEmbedding(),
-            collection_name=collection_name,
-            url=self.store_url if self.store_url else store_url,
-        )
+        self.indexer = indexer
         logger.info(f"Flat indexing into collection: {collection_name}")
 
     async def index(self, path: Path) -> dict:

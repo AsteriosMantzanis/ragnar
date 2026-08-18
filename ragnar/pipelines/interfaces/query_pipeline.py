@@ -5,14 +5,14 @@ from abc import abstractmethod
 
 from loguru import logger
 
-from ragnar.expand.llm_query_expander import LLMQueryExpander
-from ragnar.generation.simple_generator import Generator
-from ragnar.grounding.hf_grounding import HF_Grounding
+from ragnar.expand.interfaces.base_expander import BaseQueryExpander
+from ragnar.generation.interfaces.base_generator import BaseGenerator
+from ragnar.grounding.interfaces.base_grounder import BaseGrounding
 from ragnar.llm.interfaces.llm_adapter import BaseLLMAdapter
 from ragnar.prompts.prompt_loader import PromptLoader
-from ragnar.rerank.fast_embed_reranker import FastEmbedReranker
-from ragnar.retrieval.hybrid_qdrant_retriever import HybridQdrantRetriever
-from ragnar.rewrite.query_rewriter import LLMQueryRewriter
+from ragnar.rerank.interfaces.base_cross_encoder import BaseCrossEncoder
+from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
+from ragnar.rewrite.interfaces.base_rewritter import BaseQueryRewriter
 from ragnar.session.in_memory_session_store import InMemorySessionStore
 from ragnar.session.interfaces.session_store import BaseSessionStore
 from ragnar.session.session import Session
@@ -25,15 +25,18 @@ class BaseQueryPipeline(ABC):
         self,
         llm_adapter: BaseLLMAdapter,
         prompt_loader: PromptLoader,
-        retriever: HybridQdrantRetriever,
-        reranker: FastEmbedReranker,
-        generator: Generator,
-        grounder: HF_Grounding,
+        retriever: BaseRetriever,
+        reranker: BaseCrossEncoder,
+        generator: BaseGenerator,
+        grounder: BaseGrounding,
+        rewriter: BaseQueryRewriter,
+        expander: BaseQueryExpander,
         session_store: BaseSessionStore | None = None,
     ):
-        self.rewriter = LLMQueryRewriter(llm_adapter, prompt_loader)
-        self.expander = LLMQueryExpander(llm_adapter, prompt_loader)
+        # Accept interfaces, not implementations
         self.retriever = retriever
+        self.rewriter = rewriter
+        self.expander = expander
         self.reranker = reranker
         self.generator = generator
         self.grounder = grounder
@@ -44,7 +47,6 @@ class BaseQueryPipeline(ABC):
     @abstractmethod
     async def _retrieve(self, expanded_queries: list[str]) -> list[dict]:
         """Retrieve results based on strategy"""
-        pass
 
     async def query(self, user_query: str, session_id: str) -> dict:
         """Execute full query pipeline"""
@@ -60,11 +62,15 @@ class BaseQueryPipeline(ABC):
                 session = Session(session_id=session_id)
                 logger.info(f"Created new session: {session_id}")
 
+            # Add conversation context to query
+            history = session.get_history(max_messages=4)  # Last 2 exchanges
+            enriched_query = f"{history}\n\nNew question: {user_query}"
+
             session.add_message('user', user_query)
 
             # 1. Rewrite
             logger.info('Step 1/7: Rewriting query')
-            rewritten = await self.rewriter.rewrite(user_query)
+            rewritten = await self.rewriter.rewrite(enriched_query)
             logger.debug(f"Rewritten: {rewritten[:60]}...")
 
             # 2. Expand
