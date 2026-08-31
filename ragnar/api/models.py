@@ -18,6 +18,7 @@ class QueryResponse(BaseModel):
     sources: list[dict]
     session_id: str
     conversation_length: int
+    metrics: dict | None = None
 
 
 class IndexRequest(BaseModel):

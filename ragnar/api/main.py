@@ -85,6 +85,7 @@ async def query_endpoint(request: QueryRequest):
             sources=result['sources'],
             session_id=result['session_id'],
             conversation_length=result['conversation_length'],
+            metrics=result['metrics'],
         )
 
     except Exception as e:

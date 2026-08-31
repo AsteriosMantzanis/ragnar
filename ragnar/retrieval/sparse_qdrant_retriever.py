@@ -42,7 +42,7 @@ class SparseQdrantRetriever(BaseRetriever):
         parent_collection_name: str,
         child_collection_name: str,
         linkage_id: str,
-        top_k: int = 20,
+        top_k: int = 10,
     ) -> dict[str, Any]:
         query_sparse_vector = await self.embedding.embed_query(query)
 

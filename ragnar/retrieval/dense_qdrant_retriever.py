@@ -23,7 +23,7 @@ class DenseQdrantRetriever(BaseRetriever):
     async def retrieve(
         self, query: str,
         collection_name: str,
-        top_k: int = 20,
+        top_k: int = 10,
     ) -> list[dict]:
 
         query_dense_vector = await self.embedding.embed_query(query)
@@ -43,7 +43,7 @@ class DenseQdrantRetriever(BaseRetriever):
         parent_collection_name: str,
         child_collection_name: str,
         linkage_id: str,
-        top_k: int = 5,
+        top_k: int = 10,
     ) -> dict[str, Any]:
 
         query_dense_vector = await self.embedding.embed_query(query)
@@ -60,7 +60,7 @@ class DenseQdrantRetriever(BaseRetriever):
         # 2. Extract parent page IDs
         link_ids = set()
         for result in child_results.points:
-            ids = result.payload.get('link_ids', [])
+            ids = result.payload.get(linkage_id, [])
             link_ids.update(ids)
 
         # # 3. Fetch parent pages

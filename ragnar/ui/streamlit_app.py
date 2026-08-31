@@ -172,7 +172,11 @@ def render_sources(sources: list[dict]) -> None:
             )
 
             score = source.get('rerank_score', source.get('score'))
-            score_text = f"{float(score):.3f}" if score else '—'
+            score_text = (
+                f"{float(score):.3f}"
+                if score is not None
+                else '—'
+            )
 
             col1, col2 = st.columns([0.8, 0.2])
             with col1:
@@ -190,7 +194,6 @@ def render_metrics(messages: list[dict]) -> None:
         for message in messages
         if message['role'] == 'assistant'
     ]
-
     if not assistant_messages:
         return
 
@@ -198,23 +201,29 @@ def render_metrics(messages: list[dict]) -> None:
         message.get('grounding_percentage', 0)
         for message in assistant_messages
     ]
-
     average_grounding = (
         sum(grounding_scores) / len(grounding_scores)
     )
 
-    col1, col2, col3 = st.columns(3)
+    # Extract metrics if available
+    response_times = [
+        message.get('metrics', {}).get('total_duration_s', 0)
+        for message in assistant_messages
+        if message.get('metrics')
+    ]
+    avg_response_time = (
+        sum(response_times) / len(response_times)
+        if response_times else 0
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.markdown(
             f"""
             <div class="metric-card">
-                <div class="metric-label">
-                    Messages
-                </div>
-                <div class="metric-value">
-                    {len(messages)}
-                </div>
+                <div class="metric-label">Total Messages</div>
+                <div class="metric-value">{len(messages)}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -224,12 +233,8 @@ def render_metrics(messages: list[dict]) -> None:
         st.markdown(
             f"""
             <div class="metric-card">
-                <div class="metric-label">
-                    Questions
-                </div>
-                <div class="metric-value">
-                    {len(assistant_messages)}
-                </div>
+                <div class="metric-label">Avg Response</div>
+                <div class="metric-value">{avg_response_time:.2f}s</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -239,17 +244,67 @@ def render_metrics(messages: list[dict]) -> None:
         st.markdown(
             f"""
             <div class="metric-card">
-                <div class="metric-label">
-                    Avg. grounding
-                </div>
-                <div class="metric-value">
-                    {average_grounding:.0f}%
-                </div>
+                <div class="metric-label">Questions</div>
+                <div class="metric-value">{len(assistant_messages)}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
+    with col4:
+        st.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">Avg Grounding</div>
+                <div class="metric-value">{average_grounding:.0f}%</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def render_query_metrics(metrics: dict) -> None:
+    """Render metrics for a single query."""
+
+    if not metrics or not metrics.get('steps'):
+        return
+
+    with st.expander('Query performance'):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                'Response time',
+                f"{metrics['total_duration_s']:.2f} s",
+            )
+
+        with col2:
+            st.metric(
+                'Sources',
+                metrics['num_sources'],
+            )
+
+        with col3:
+            st.metric(
+                'Grounding',
+                f"{metrics['grounding_percentage']:.0f}%",
+            )
+
+        st.divider()
+
+        steps_data = [
+            {
+                'Step': step['name'].capitalize(),
+                'Duration': f"{step['duration_s']:.2f} s",
+            }
+            for step in metrics['steps']
+        ]
+
+        st.dataframe(
+            steps_data,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 # Session State
 
@@ -269,7 +324,6 @@ def initialize_state() -> None:
 
 
 # Sidebar
-
 
 def render_sidebar() -> None:
     with st.sidebar:
@@ -334,7 +388,6 @@ def render_sidebar() -> None:
 
 # Chat
 
-
 def render_messages() -> None:
     for message in st.session_state.messages:
         role = message['role']
@@ -342,17 +395,26 @@ def render_messages() -> None:
         with st.chat_message(role):
             st.markdown(message['content'])
 
-            if role == 'assistant':
-                grounding_percentage = message.get(
-                    'grounding_percentage',
-                )
+            if role != 'assistant':
+                continue
 
-                if grounding_percentage is not None:
-                    render_grounding(grounding_percentage)
+            # Grounding for this specific answer
+            grounding_percentage = message.get(
+                'grounding_percentage',
+            )
 
-                render_sources(
-                    message.get('sources', []),
-                )
+            if grounding_percentage is not None:
+                render_grounding(grounding_percentage)
+
+            # Sources used for this specific answer
+            render_sources(
+                message.get('sources', []),
+            )
+
+            # Performance metrics for this specific query
+            render_query_metrics(
+                message.get('metrics', {}),
+            )
 
 
 def handle_query(query: str) -> None:
@@ -372,10 +434,7 @@ def handle_query(query: str) -> None:
             'Running Ragnar pipeline...',
             expanded=True,
         ) as status:
-            st.write('Retrieving relevant context...')
-            st.write('Reranking retrieved chunks...')
-            st.write('Generating answer...')
-            st.write('Checking grounding...')
+            st.write('Processing query...')
 
             result = client.query(
                 query=query,
@@ -404,6 +463,10 @@ def handle_query(query: str) -> None:
                     'sources',
                     [],
                 ),
+                'metrics': result.get(
+                    'metrics',
+                    {},
+                ),
             },
         )
 
@@ -430,7 +493,6 @@ def handle_query(query: str) -> None:
 
 
 # Main
-
 
 def main() -> None:
     initialize_state()

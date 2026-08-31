@@ -12,13 +12,15 @@ load_dotenv()
 
 
 class FastEmbedReranker(BaseCrossEncoder):
-    def __init__(self):
+    def __init__(self, batch_size: int = 5):
         self.model_name = os.getenv(
             'rerank_model', 'jinaai/jina-reranker-v2-base-multilingual',
         )
         self.model = TextCrossEncoder(self.model_name)
+        self.batch_size = batch_size
         logger.info(
-            f"Initialized FastEmbedReranker with model: {self.model_name}",
+            f"Initialized FastEmbedReranker with model: {self.model_name} | "
+            f"batch_size: {batch_size}",
         )
 
     async def score(
@@ -28,9 +30,16 @@ class FastEmbedReranker(BaseCrossEncoder):
         logger.debug(f"Query: {query[:50]}...")
 
         texts = [r['text'] for r in results]
-        scores = self.model.rerank(query, texts)
 
-        for i, (result, score) in enumerate(zip(results, scores)):
+        # Batch scoring to avoid OOM
+        all_scores = []
+        for i in range(0, len(texts), self.batch_size):
+            batch_texts = texts[i:i + self.batch_size]
+            batch_scores = self.model.rerank(query, batch_texts)
+            all_scores.extend(batch_scores)
+            logger.debug(f"Scored batch {i // self.batch_size + 1}")
+
+        for i, (result, score) in enumerate(zip(results, all_scores)):
             result['rerank_score'] = float(score)
             logger.debug(f"Result {i+1}: score={result['rerank_score']:.3f}")
 
@@ -60,9 +69,16 @@ class FastEmbedReranker(BaseCrossEncoder):
         logger.debug(f"Reranking {len(child_results)} {child_entity}")
 
         texts = [item['text'] for item in child_results]
-        scores = self.model.rerank(query, texts)
 
-        for i, (item, score) in enumerate(zip(child_results, scores)):
+        # Batch scoring to avoid OOM
+        all_scores = []
+        for i in range(0, len(texts), self.batch_size):
+            batch_texts = texts[i:i + self.batch_size]
+            batch_scores = self.model.rerank(query, batch_texts)
+            all_scores.extend(batch_scores)
+            logger.debug(f"Scored batch {i // self.batch_size + 1}")
+
+        for i, (item, score) in enumerate(zip(child_results, all_scores)):
             item['rerank_score'] = float(score)
             logger.debug(
                 f"{child_entity} {i+1}: score={item['rerank_score']:.3f}",

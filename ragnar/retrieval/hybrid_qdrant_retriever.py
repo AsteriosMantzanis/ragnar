@@ -28,7 +28,7 @@ class HybridQdrantRetriever(BaseRetriever):
     async def retrieve(
         self, query: str,
         collection_name: str,
-        top_k: int = 20,
+        top_k: int = 10,
     ) -> list[dict]:
 
         query_sparse_vector = await self.sparse_embedding.embed_query(query)
@@ -58,7 +58,7 @@ class HybridQdrantRetriever(BaseRetriever):
         parent_collection_name: str,
         child_collection_name: str,
         linkage_id: str,
-        top_k: int = 20,
+        top_k: int = 10,
     ) -> dict[str, Any]:
 
         query_sparse_vector = await self.sparse_embedding.embed_query(query)
