@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from loguru import logger
 
+from ragnar.generation.interfaces.base_generator import BaseGenerator
 from ragnar.llm.interfaces.llm_adapter import BaseLLMAdapter
 from ragnar.prompts.prompt_loader import PromptLoader
 
 
-class Generator:
+class Generator(BaseGenerator):
     def __init__(
         self,
         llm_adapter: BaseLLMAdapter,

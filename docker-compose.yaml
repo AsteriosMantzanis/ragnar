@@ -8,8 +8,8 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      - LLM_MODEL=${LLM_MODEL}
-    entrypoint: /bin/sh -c "ollama serve & sleep 2 && ollama pull $$LLM_MODEL && wait"
+      - LLM_MODEL=${LLM_MODEL:-gemma2:2b}
+    entrypoint: /bin/sh -c "ollama serve & sleep 2 && ollama pull ${LLM_MODEL:-gemma2:2b} && wait"
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -24,6 +24,38 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://ollama:11434
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - ollama
+      - qdrant
+      - redis
+    volumes:
+      - ./ragnar:/app/ragnar:ro
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    volumes:
+      - ./ragnar:/app/ragnar:ro
 
 volumes:
   ollama_data:
