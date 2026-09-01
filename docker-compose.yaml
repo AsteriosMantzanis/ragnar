@@ -35,6 +35,7 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - OLLAMA_URL=http://ollama:11434
       - REDIS_URL=redis://redis:6379
+      - HF_TOKEN=${HF_TOKEN:-}
     depends_on:
       - ollama
       - qdrant

@@ -19,6 +19,8 @@ class QueryResponse(BaseModel):
     session_id: str
     conversation_length: int
     metrics: dict | None = None
+    cache_hit: bool = False
+    cache_score: float | None = None
 
 
 class IndexRequest(BaseModel):

@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from loguru import logger
 
+from ragnar.cache.semantic_qdrant_cache import QdrantSemanticCache
 from ragnar.chunkers.section_chunker import SectionChunker
 from ragnar.chunkers.subsection_chunker import SubsectionChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
@@ -144,7 +145,6 @@ def get_sparse_embedding() -> SparseFastEmbedding:
 
 # Index
 
-
 def get_flat_index_pipeline() -> BaseIndexPipeline:
     """Factory for flat index pipeline"""
     logger.info('Creating FlatIndexPipeline')
@@ -212,7 +212,6 @@ def get_index_pipeline(strategy: str = 'hierarchical') -> BaseIndexPipeline:
 
 # Query
 
-
 def get_flat_query_pipeline() -> BaseQueryPipeline:
     """Factory for flat query pipeline"""
     logger.info('Creating FlatQueryPipeline')
@@ -226,6 +225,7 @@ def get_flat_query_pipeline() -> BaseQueryPipeline:
     rewriter = get_rewriter()
     expander = get_expander()
     session_store = get_session_store()
+    semantic_cache = get_semantic_cache()
 
     return FlatQueryPipeline(
         llm_adapter=llm_adapter,
@@ -237,6 +237,7 @@ def get_flat_query_pipeline() -> BaseQueryPipeline:
         rewriter=rewriter,
         expander=expander,
         session_store=session_store,
+        semantic_cache=semantic_cache,
         collection_name=CHILD_COLLECTION,
     )
 
@@ -254,6 +255,7 @@ def get_hierarchical_query_pipeline() -> BaseQueryPipeline:
     rewriter = get_rewriter()
     expander = get_expander()
     session_store = get_session_store()
+    semantic_cache = get_semantic_cache()
 
     return HierarchicalQueryPipeline(
         llm_adapter=llm_adapter,
@@ -265,6 +267,7 @@ def get_hierarchical_query_pipeline() -> BaseQueryPipeline:
         rewriter=rewriter,
         expander=expander,
         session_store=session_store,
+        semantic_cache=semantic_cache,
         parent_collection_name=PARENT_COLLECTION,
         child_collection_name=CHILD_COLLECTION,
         linkage_id=LINKAGE_ID,
@@ -279,3 +282,15 @@ def get_query_pipeline(strategy: str = 'hierarchical') -> BaseQueryPipeline:
         return get_flat_query_pipeline()
     else:
         raise ValueError(f"Unknown query pipeline strategy: {strategy}")
+
+# cache
+
+
+@lru_cache
+def get_semantic_cache() -> QdrantSemanticCache:
+    return QdrantSemanticCache(
+        url=os.getenv('QDRANT_URL', 'http://localhost:6333'),
+        collection_name='ragnar_semantic_cache',
+        threshold=0.90,
+        ttl_seconds=2592000,  # 30 days
+    )

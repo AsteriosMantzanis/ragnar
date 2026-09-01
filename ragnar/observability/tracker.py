@@ -4,6 +4,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
+from datetime import timezone
 
 from ragnar.observability.metrics import StepMetrics
 
@@ -32,7 +33,9 @@ class QueryTracker:
             step_metric = StepMetrics(
                 name=name,
                 duration_s=duration_s,
-                timestamp=datetime.now().isoformat(),
+                timestamp=datetime.now(
+                    timezone.utc,
+                ).isoformat(),
             )
 
             self.steps.append(asdict(step_metric))

@@ -1,11 +1,10 @@
-Answer the question using only the information provided in the context.
+Answer the question based ONLY on the provided context. Be direct and concise.
 
-{% if context %}
+If the context doesn't contain enough information to answer, say "The context does not provide sufficient information."
+
 Context:
 {{ context }}
-{% endif %}
 
-Question:
-{{ query }}
+Question: {{ query }}
 
 Answer:

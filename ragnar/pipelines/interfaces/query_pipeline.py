@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from loguru import logger
 
+from ragnar.cache.interfaces.base_sem_cache import BaseSemanticCache
 from ragnar.expand.interfaces.base_expander import BaseQueryExpander
 from ragnar.generation.interfaces.base_generator import BaseGenerator
 from ragnar.grounding.interfaces.base_grounder import BaseGrounding
@@ -36,6 +37,7 @@ class BaseQueryPipeline(ABC):
         rewriter: BaseQueryRewriter,
         expander: BaseQueryExpander,
         session_store: BaseSessionStore | None = None,
+        semantic_cache: BaseSemanticCache | None = None,
     ):
         # Accept interfaces, not implementations
         self.retriever = retriever
@@ -45,6 +47,7 @@ class BaseQueryPipeline(ABC):
         self.generator = generator
         self.grounder = grounder
         self.session_store = session_store or InMemorySessionStore()
+        self.semantic_cache = semantic_cache
         self.metrics_collector = MetricsCollector()
 
         logger.info(f"Initialized {self.__class__.__name__}")
@@ -55,26 +58,65 @@ class BaseQueryPipeline(ABC):
 
     async def query(self, user_query: str, session_id: str) -> dict:
         """Execute full query pipeline"""
+
         # Start Tracker
         tracker = QueryTracker()
         tracker.start()
 
-        logger.info(
-            f"Pipeline start | session: {session_id} | "
-            f"query: {user_query[:50]}...",
-        )
+        # Get or create session FIRST
+        session = await self.session_store.get(session_id)
+        if not session:
+            session = Session(session_id=session_id)
+            logger.info(f"Created new session: {session_id}")
+
+        # Only cache if first message (no history)
+        should_cache = len(session.messages) == 0
+
+        if should_cache and self.semantic_cache:
+            strategy_key = self.__class__.__name__.replace(
+                'QueryPipeline', '',
+            ).lower()
+            cached = await self.semantic_cache.get(
+                query=user_query,
+                strategy=strategy_key,
+            )
+            if cached:
+                cache_score = cached.pop('cache_score')
+                metrics = QueryMetrics(
+                    session_id=session_id,
+                    query=user_query,
+                    strategy=strategy_key,
+                    total_duration_s=tracker.end(),
+                    steps=[],
+                    answer_length=len(cached.get('answer', '')),
+                    num_sources=len(cached.get('sources', [])),
+                    grounding_percentage=cached.get('grounded_percentage', 0),
+                    cache_hit=True,
+                    cache_score=cache_score,
+                )
+                self.metrics_collector.record_query(metrics)
+
+                logger.info(
+                    f"Semantic cache HIT | query: {user_query[:50]}... | "
+                    f"score: {cache_score:.3f}",
+                )
+
+                cached['session_id'] = session_id
+                cached['conversation_length'] = 0
+                cached['metrics'] = asdict(metrics)
+                return cached
+
+            logger.info(f"Semantic cache MISS | query: {user_query[:50]}...")
+
+            logger.info(
+                f"Pipeline start | session: {session_id} | "
+                f"query: {user_query[:50]}...",
+            )
 
         try:
-            # Get or create session
-            session = await self.session_store.get(session_id)
-            if not session:
-                session = Session(session_id=session_id)
-                logger.info(f"Created new session: {session_id}")
-
             # Add conversation context to query
             history = session.get_history(max_messages=4)  # Last 2 exchanges
             enriched_query = f"{history}\n\nNew question: {user_query}"
-
             session.add_message('user', user_query)
 
             # 1. Rewrite
@@ -143,23 +185,26 @@ class BaseQueryPipeline(ABC):
             )
             await self.session_store.save(session)
 
-            # Record metrics
+            # Record metrics (full pipeline)
             total_s = tracker.end()
+            strategy_key = self.__class__.__name__.replace(
+                'QueryPipeline', '',
+            ).lower()
             metrics = QueryMetrics(
                 session_id=session_id,
                 query=user_query,
-                strategy=self.__class__.__name__,
+                strategy=strategy_key,
                 total_duration_s=total_s,
                 steps=tracker.steps,
                 answer_length=len(answer),
                 num_sources=len(reranked),
                 grounding_percentage=grounded_pct,
+                cache_hit=False,
+                cache_score=None,
             )
             self.metrics_collector.record_query(metrics)
 
-            logger.info('Pipeline complete')
-
-            return {
+            result = {
                 'answer': answer,
                 'grounding': grounding,
                 'grounded_percentage': grounded_pct,
@@ -168,6 +213,16 @@ class BaseQueryPipeline(ABC):
                 'conversation_length': len(session.messages),
                 'metrics': asdict(metrics),
             }
+
+            # Only cache initial questions
+            if should_cache and self.semantic_cache:
+                await self.semantic_cache.set(
+                    query=user_query,
+                    strategy=strategy_key,
+                    response=result,
+                )
+
+            return result
 
         except Exception as e:
             logger.error(f"Pipeline failed: {e}", exc_info=True)

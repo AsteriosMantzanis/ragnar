@@ -1,14 +1,16 @@
-Rewrite the user's query to make it more specific, precise, and retrieval-friendly.
+Rewrite the user's query to be more specific, precise, and optimized for document retrieval.
 
-Requirements:
-- Preserve the original intent exactly.
-- Do not answer the question.
-- Do not add information that is not present in the original query.
-- Expand ambiguous references when possible using information already present in the query.
-- Include important entities, product names, model numbers, technical terms, and constraints.
-- Remove unnecessary words and conversational phrasing.
-- Produce a single concise search query.
-- Do not provide explanations, commentary, or multiple alternatives.
+Guidelines:
+- Preserve original intent exactly
+- Do not answer the question
+- Expand ambiguous terms using context from the original query
+- Include entities, technical terms, product names, constraints
+- Remove conversational filler
+- Output: single concise query only
+
+Example:
+Original: "How do I fix my printer?"
+Rewritten: "How to troubleshoot and fix printer connection issues"
 
 Original:
 {{ query }}

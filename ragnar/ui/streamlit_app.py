@@ -416,6 +416,11 @@ def render_messages() -> None:
                 message.get('metrics', {}),
             )
 
+            # cache bool and score
+            render_cache_status(
+                message.get('metrics', {}),
+            )
+
 
 def handle_query(query: str) -> None:
     client: RagnarClient = st.session_state.client
@@ -491,8 +496,51 @@ def handle_query(query: str) -> None:
             f"Unexpected error: {exc}",
         )
 
+# cache
+
+
+def render_cache_status(metrics: dict) -> None:
+    """Show if answer was cached or generated."""
+    if not metrics:
+        return
+
+    cache_hit = metrics.get('cache_hit', False)
+    cache_score = metrics.get('cache_score')
+
+    if cache_hit:
+        score_text = f" · {cache_score:.2f}" if cache_score else ''
+        st.markdown(
+            f"""
+            <div style="display: inline-block;
+            padding: 0.4rem 0.8rem;
+            margin-top: 0.5rem;
+            border-radius: 6px;
+            background: #d4edda;
+            color: #155724;
+            font-size: 0.85rem;">
+                📦 From Cache{score_text}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """
+            <div style="display: inline-block;
+            padding: 0.4rem 0.8rem;
+            margin-top: 0.5rem;
+            border-radius: 6px;
+            background: #e7e8ea;
+            color: #383d41;
+            font-size: 0.85rem;">
+                ◉ Generated
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # Main
+
 
 def main() -> None:
     initialize_state()

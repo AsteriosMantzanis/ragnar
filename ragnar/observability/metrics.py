@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from datetime import timezone
 
 from loguru import logger
 
@@ -23,12 +24,15 @@ class QueryMetrics:
     answer_length: int
     num_sources: int
     grounding_percentage: float
-    cached: bool = False
+    cache_hit: bool = False
+    cache_score: float | None = None
     timestamp: str | None = None
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.now().isoformat()
+            self.timestamp = datetime.now(
+                timezone.utc,
+            ).isoformat()
 
 
 class MetricsCollector:
