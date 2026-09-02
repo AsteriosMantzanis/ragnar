@@ -5,9 +5,11 @@ from pathlib import Path
 from jinja2 import Environment
 from jinja2 import FileSystemLoader
 
+_DEFAULT_PROMPTS_DIR = Path(__file__).parent
+
 
 class PromptLoader:
-    def __init__(self, prompts_dir: str = 'ragnar/prompts'):
+    def __init__(self, prompts_dir: str | Path = _DEFAULT_PROMPTS_DIR):
         self.prompts_dir = Path(prompts_dir)
         self.env = Environment(loader=FileSystemLoader(self.prompts_dir))
 
