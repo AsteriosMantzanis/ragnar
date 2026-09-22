@@ -7,7 +7,6 @@ from dataclasses import asdict
 from loguru import logger
 
 from ragnar.cache.interfaces.base_sem_cache import BaseSemanticCache
-from ragnar.expand.interfaces.base_expander import BaseQueryExpander
 from ragnar.generation.interfaces.base_generator import BaseGenerator
 from ragnar.grounding.interfaces.base_grounder import BaseGrounding
 from ragnar.llm.interfaces.llm_adapter import BaseLLMAdapter
@@ -17,7 +16,6 @@ from ragnar.observability.tracker import QueryTracker
 from ragnar.prompts.prompt_loader import PromptLoader
 from ragnar.rerank.interfaces.base_cross_encoder import BaseCrossEncoder
 from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
-from ragnar.rewrite.interfaces.base_rewritter import BaseQueryRewriter
 from ragnar.session.in_memory_session_store import InMemorySessionStore
 from ragnar.session.interfaces.session_store import BaseSessionStore
 from ragnar.session.session import Session
@@ -34,15 +32,11 @@ class BaseQueryPipeline(ABC):
         reranker: BaseCrossEncoder,
         generator: BaseGenerator,
         grounder: BaseGrounding,
-        rewriter: BaseQueryRewriter,
-        expander: BaseQueryExpander,
         session_store: BaseSessionStore | None = None,
         semantic_cache: BaseSemanticCache | None = None,
     ):
         # Accept interfaces, not implementations
         self.retriever = retriever
-        self.rewriter = rewriter
-        self.expander = expander
         self.reranker = reranker
         self.generator = generator
         self.grounder = grounder
@@ -53,7 +47,7 @@ class BaseQueryPipeline(ABC):
         logger.info(f"Initialized {self.__class__.__name__}")
 
     @abstractmethod
-    async def _retrieve(self, expanded_queries: list[str]) -> list[dict]:
+    async def _retrieve(self, query: str) -> list[dict]:
         """Retrieve results based on strategy"""
 
     async def query(self, user_query: str, session_id: str) -> dict:
@@ -114,32 +108,17 @@ class BaseQueryPipeline(ABC):
             )
 
         try:
-            # Add conversation context to query
-            history = session.get_history(max_messages=4)  # Last 2 exchanges
-            enriched_query = f"{history}\n\nNew question: {user_query}"
             session.add_message('user', user_query)
 
-            # 1. Rewrite
-            async with tracker.step('rewrite'):
-                logger.info('Step 1/7: Rewriting query')
-                rewritten = await self.rewriter.rewrite(enriched_query)
-                logger.debug(f"Rewritten: {rewritten[:60]}...")
-
-            # 2. Expand
-            async with tracker.step('expand'):
-                logger.info('Step 2/7: Expanding query')
-                expanded_queries = await self.expander.expand(rewritten)
-                logger.info(f"Expanded to {len(expanded_queries)} queries")
-
-            # 3. Retrieve (strategy-specific)
+            # 1. Retrieve (strategy-specific)
             async with tracker.step('retrieval'):
-                logger.info('Step 3/7: Retrieving')
-                all_results = await self._retrieve(expanded_queries)
+                logger.info('Step 1/5: Retrieving')
+                all_results = await self._retrieve(user_query)
                 logger.info(f"Retrieved {len(all_results)} results")
 
-            # 4. Deduplicate
+            # 2. Deduplicate
             async with tracker.step('deduplication'):
-                logger.info('Step 4/7: Deduplicating')
+                logger.info('Step 2/5: Deduplicating')
                 unique_results = {}
                 for r in all_results:
                     chunk_id = r.get('chunk_id')
@@ -147,9 +126,9 @@ class BaseQueryPipeline(ABC):
                         unique_results[chunk_id] = r
                 logger.info(f"Deduplicated to {len(unique_results)}")
 
-            # 5. Rerank
+            # 3. Rerank
             async with tracker.step('reranking'):
-                logger.info('Step 5/7: Reranking')
+                logger.info('Step 3/5: Reranking')
                 reranked = await self.reranker.score(
                     query=user_query,
                     results=list(unique_results.values()),
@@ -157,19 +136,29 @@ class BaseQueryPipeline(ABC):
                 )
                 logger.info(f"Top-{len(reranked)} reranked")
 
-            # 6. Generate
+            # 4. Generate
             async with tracker.step('generation'):
-                logger.info('Step 6/7: Generating answer')
-                answer = await self.generator.generate(
+                logger.info('Step 4/5: Generating answer')
+                generated = await self.generator.generate(
                     query=user_query,
                     context=reranked,
                     prompt_template='simple_qa',
                 )
+
+                if isinstance(generated, dict):
+                    answer = str(
+                        generated.get('answer')
+                        or generated.get('response')
+                        or '',
+                    )
+                else:
+                    answer = str(generated)
+
                 logger.info(f"Generated ({len(answer)} chars)")
 
-            # 7. Ground
+            # 5. Ground
             async with tracker.step('grounding'):
-                logger.info('Step 7/7: Grounding answer')
+                logger.info('Step 5/5: Grounding answer')
                 grounding = await self.grounder.ground(answer, reranked)
                 grounded_count = sum(1 for g in grounding if g['grounded'])
                 grounded_pct = (

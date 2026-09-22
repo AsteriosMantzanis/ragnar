@@ -13,7 +13,8 @@ class BaseGenerator(ABC):
         query: str,
         context: list[dict[str, Any]],
         prompt_template: str = 'simple_qa',
-    ) -> str:
+        response_schema: dict[str, Any] | None = None,
+    ) -> str | dict[str, Any]:
         pass
 
     @abstractmethod
@@ -23,5 +24,6 @@ class BaseGenerator(ABC):
         context: dict[str, list[dict[str, Any]]],
         generation_entity: str,
         prompt_template: str = 'simple_qa',
-    ) -> str:
+        response_schema: dict[str, Any] | None = None,
+    ) -> str | dict[str, Any]:
         pass

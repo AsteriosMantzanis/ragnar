@@ -10,14 +10,10 @@ class FlatQueryPipeline(BaseQueryPipeline):
         super().__init__(*args, **kwargs)
         self.collection_name = collection_name
 
-    async def _retrieve(self, expanded_queries: list[str]) -> list[dict]:
+    async def _retrieve(self, query: str) -> list[dict]:
         """Flat retrieval from single collection"""
-        all_results = []
-        for q in expanded_queries:
-            results = await self.retriever.retrieve(
-                query=q,
-                collection_name=self.collection_name,
-                top_k=10,
-            )
-            all_results.extend(results)
-        return all_results
+        return await self.retriever.retrieve(
+            query=query,
+            collection_name=self.collection_name,
+            top_k=10,
+        )

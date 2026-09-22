@@ -18,6 +18,18 @@ from ragnar.api.models import MessageModel
 from ragnar.api.models import QueryRequest
 from ragnar.api.models import QueryResponse
 from ragnar.api.models import SessionResponse
+from ragnar.observability.log_buffer import configure_log_buffer
+from ragnar.observability.log_buffer import get_logs
+from ragnar.observability.log_buffer import latest_cursor
+from ragnar.utils.logging import configure_logging
+
+configure_logging(level='INFO')
+
+# Keep Loguru output in stderr as before, and additionally retain a small
+# in-memory tail that the Streamlit UI can poll while a request is running.
+# Keep the UI stream at INFO+ so debug-level rerank/grading noise doesn't flood
+# the frontend polling endpoint.
+configure_log_buffer(level='INFO')
 
 # Initialize FastAPI
 
@@ -51,6 +63,16 @@ app = FastAPI(
 )
 
 logger.info('Ragnar API starting up...')
+
+
+@app.get('/logs')
+async def logs_endpoint(after: int = -1, limit: int = 200):
+    """Return Loguru records newer than ``after``."""
+    limit = max(1, min(limit, 500))
+    return {
+        'logs': get_logs(after=after, limit=limit),
+        'cursor': latest_cursor(),
+    }
 
 
 # Endpoints

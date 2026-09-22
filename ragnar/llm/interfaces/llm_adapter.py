@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from typing import Any
 
 
 class BaseLLMAdapter(ABC):
@@ -9,5 +10,6 @@ class BaseLLMAdapter(ABC):
     async def generate(
         self,
         prompt: str,
-    ) -> str:
+        format: dict[str, Any] | str | None = None,
+    ) -> str | dict[str, Any]:
         pass

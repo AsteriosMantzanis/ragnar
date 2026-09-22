@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
 from loguru import logger
 
 from ragnar.llm.interfaces.llm_adapter import BaseLLMAdapter
+
 load_dotenv()
 
 
@@ -19,20 +22,37 @@ class OllamaLLMAdapter(BaseLLMAdapter):
         self.model = model
         self.client = httpx.AsyncClient(base_url=base_url)
 
-    async def generate(self, prompt: str) -> str:
+    async def generate(
+        self,
+        prompt: str,
+        format: dict[str, Any] | str | None = None,
+    ) -> str | dict[str, Any]:
+        payload = {
+            'model': self.model,
+            'prompt': prompt,
+            'stream': False,
+        }
+        if format is not None:
+            payload['format'] = format
+
         for attempt in range(3):
             try:
                 response = await self.client.post(
                     '/api/generate',
-                    json={
-                        'model': self.model,
-                        'prompt': prompt,
-                        'stream': False,
-                    },
+                    json=payload,
                     timeout=120.0,
                 )
                 response.raise_for_status()
-                return response.json()['response']
+                result = response.json()
+                content = result.get('response', '')
+
+                if format is not None:
+                    try:
+                        return json.loads(content)
+                    except (TypeError, json.JSONDecodeError):
+                        return {'response': content}
+
+                return content
             except httpx.HTTPError as e:
                 logger.exception(
                     f"Attempt {attempt + 1} failed with {type(e).__name__}",

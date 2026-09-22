@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
+from concurrent.futures import Future
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -99,10 +103,46 @@ class RagnarClient:
 
         return response.json()
 
+    def get_log_cursor(self) -> int:
+        response = requests.get(
+            f"{self.base_url}/logs",
+            params={'after': -1, 'limit': 1},
+            timeout=5,
+        )
+        response.raise_for_status()
+        return response.json()['cursor']
+
+    def get_logs(self, after: int) -> dict:
+        response = requests.get(
+            f"{self.base_url}/logs",
+            params={'after': after, 'limit': 200},
+            timeout=5,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def get_session(self, session_id: str) -> dict:
         response = requests.get(
             f"{self.base_url}/sessions/{session_id}",
             timeout=10,
+        )
+
+        response.raise_for_status()
+
+        return response.json()
+
+    def index(
+        self,
+        path: str,
+        strategy: str,
+    ) -> dict:
+        response = requests.post(
+            f"{self.base_url}/index",
+            json={
+                'path': path,
+                'strategy': strategy,
+            },
+            timeout=None,
         )
 
         response.raise_for_status()
@@ -306,8 +346,205 @@ def render_query_metrics(metrics: dict) -> None:
             hide_index=True,
         )
 
-# Session State
 
+def render_query_debug_info(message: dict) -> None:
+    """Render the rewritten and expanded queries for a single answer."""
+    rewritten_query = message.get('rewritten_query')
+    expanded_queries = message.get('expanded_queries') or []
+
+    if not rewritten_query and not expanded_queries:
+        return
+
+    with st.expander('Query analysis', expanded=False):
+        if rewritten_query:
+            st.markdown('**Rewritten query**')
+            st.code(rewritten_query)
+
+        if expanded_queries:
+            st.markdown('**Expanded queries**')
+            for expanded_query in expanded_queries:
+                st.code(expanded_query)
+
+
+def render_log_entry(entry: dict) -> str:
+    time_value = entry.get('time', '')
+    level = entry.get('level', 'INFO')
+    message = (entry.get('message') or '').replace('\n', ' ')
+    module = entry.get('module') or 'app'
+
+    if level == 'DEBUG':
+        return f"{time_value} · {level:<5} · {module} · {message}"
+
+    return f"{time_value} · {level:<5} · {message}"
+
+
+def run_with_live_logs(label: str, operation):
+    """Run an API call in the background while polling its Loguru output."""
+    client: RagnarClient = st.session_state.client
+    cursor = client.get_log_cursor()
+    logs: list[dict] = []
+
+    with st.status(label, expanded=True) as status:
+        log_area = st.empty()
+
+        def render_logs() -> None:
+            if logs:
+                # Show the newest entries last, like a terminal.
+                log_area.markdown(
+                    '\\n\\n'.join(
+                        render_log_entry(entry)
+                        for entry in logs[-80:]
+                    ),
+                )
+            else:
+                log_area.caption('Waiting for API logs...')
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future: Future = executor.submit(operation)
+
+            while not future.done():
+                try:
+                    payload = client.get_logs(after=cursor)
+                    new_logs = payload.get('logs', [])
+                    if new_logs:
+                        logs.extend(new_logs)
+                        cursor = new_logs[-1]['id']
+                        render_logs()
+                except requests.RequestException:
+                    # The API request itself is still the source of truth.
+                    pass
+
+                time.sleep(0.15)
+
+            # Drain anything emitted between the last poll and completion.
+            try:
+                payload = client.get_logs(after=cursor)
+                new_logs = payload.get('logs', [])
+                logs.extend(new_logs)
+                if new_logs:
+                    render_logs()
+            except requests.RequestException:
+                pass
+
+            result = future.result()
+
+        status.update(
+            label=f"{label.split('...')[0]} complete",
+            state='complete',
+            expanded=False,
+        )
+
+    return result
+
+
+# Index
+
+
+def handle_index(path: str, strategy: str) -> None:
+    client: RagnarClient = st.session_state.client
+
+    try:
+        result = run_with_live_logs(
+            f"Indexing '{path}' ({strategy})...",
+            lambda: client.index(path=path, strategy=strategy),
+        )
+
+        st.session_state.index_history.insert(
+            0,
+            {
+                'Time': datetime.now().strftime('%H:%M:%S'),
+                'Path': path,
+                'Strategy': strategy,
+                'Documents': result.get('documents_indexed', 0),
+                'Chunks': (
+                    result.get('chunks')
+                    if result.get('chunks') is not None
+                    else (
+                        f"{result.get('parent_chunks', 0)} parent / "
+                        f"{result.get('child_chunks', 0)} child"
+                    )
+                ),
+                'Status': result.get('status', 'unknown'),
+            },
+        )
+
+        st.success(
+            f"Indexed {result.get('documents_indexed', 0)} document(s) "
+            f"using the '{strategy}' strategy.",
+        )
+
+    except requests.exceptions.Timeout:
+        st.error(
+            'The Ragnar API timed out while indexing. Large document '
+            'sets can take a while — check the API logs for progress.',
+        )
+
+    except requests.exceptions.ConnectionError:
+        st.error(
+            f"Could not connect to Ragnar API at {API_URL}.",
+        )
+
+    except requests.exceptions.HTTPError as exc:
+        detail = exc.response.text if exc.response is not None else str(exc)
+        st.error(f"Indexing failed: {detail}")
+
+    except Exception as exc:
+        st.error(f"Unexpected error: {exc}")
+
+
+def render_index_tab() -> None:
+    st.markdown(
+        '<div class="sidebar-label">Index documents</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        'Point Ragnar at a directory of documents reachable inside the '
+        'API container (see the docker-compose volume mount) and index '
+        'them into Qdrant before querying.',
+    )
+
+    with st.form('index_form'):
+        path = st.text_input(
+            'Document path (inside the API container)',
+            value='/docs',
+        )
+
+        strategy = st.radio(
+            'Indexing strategy',
+            options=['hierarchical', 'flat'],
+            index=0 if st.session_state.strategy == 'hierarchical' else 1,
+            horizontal=True,
+            help=(
+                'Must match the strategy you plan to query with — '
+                'hierarchical and flat use separate collections.'
+            ),
+        )
+
+        submitted = st.form_submit_button(
+            'Index documents',
+            use_container_width=True,
+        )
+
+    if submitted:
+        if not path.strip():
+            st.warning('Enter a path first.')
+        else:
+            handle_index(path.strip(), strategy)
+
+    if st.session_state.index_history:
+        st.divider()
+        st.markdown(
+            '<div class="sidebar-label">Recent indexing runs</div>',
+            unsafe_allow_html=True,
+        )
+        st.dataframe(
+            st.session_state.index_history,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+# Session State
 
 def initialize_state() -> None:
     if 'client' not in st.session_state:
@@ -321,6 +558,9 @@ def initialize_state() -> None:
 
     if 'strategy' not in st.session_state:
         st.session_state.strategy = 'hierarchical'
+
+    if 'index_history' not in st.session_state:
+        st.session_state.index_history = []
 
 
 # Sidebar
@@ -416,6 +656,9 @@ def render_messages() -> None:
                 message.get('metrics', {}),
             )
 
+            # Rewritten and expanded queries for this specific answer
+            render_query_debug_info(message)
+
             # cache bool and score
             render_cache_status(
                 message.get('metrics', {}),
@@ -435,23 +678,14 @@ def handle_query(query: str) -> None:
     )
 
     try:
-        with st.status(
+        result = run_with_live_logs(
             'Running Ragnar pipeline...',
-            expanded=True,
-        ) as status:
-            st.write('Processing query...')
-
-            result = client.query(
+            lambda: client.query(
                 query=query,
                 session_id=session_id,
                 strategy=strategy,
-            )
-
-            status.update(
-                label='Completed',
-                state='complete',
-                expanded=False,
-            )
+            ),
+        )
 
         st.session_state.messages.append(
             {
@@ -471,6 +705,14 @@ def handle_query(query: str) -> None:
                 'metrics': result.get(
                     'metrics',
                     {},
+                ),
+                'rewritten_query': result.get(
+                    'rewritten_query',
+                    None,
+                ),
+                'expanded_queries': result.get(
+                    'expanded_queries',
+                    [],
                 ),
             },
         )
@@ -511,13 +753,9 @@ def render_cache_status(metrics: dict) -> None:
         score_text = f" · {cache_score:.2f}" if cache_score else ''
         st.markdown(
             f"""
-            <div style="display: inline-block;
-            padding: 0.4rem 0.8rem;
-            margin-top: 0.5rem;
-            border-radius: 6px;
-            background: #d4edda;
-            color: #155724;
-            font-size: 0.85rem;">
+            <div style="display: inline-block; padding: 0.4rem 0.8rem;
+            margin-top: 0.5rem; border-radius: 6px; background: #d4edda;
+            color: #155724; font-size: 0.85rem;">
                 📦 From Cache{score_text}
             </div>
             """,
@@ -526,13 +764,9 @@ def render_cache_status(metrics: dict) -> None:
     else:
         st.markdown(
             """
-            <div style="display: inline-block;
-            padding: 0.4rem 0.8rem;
-            margin-top: 0.5rem;
-            border-radius: 6px;
-            background: #e7e8ea;
-            color: #383d41;
-            font-size: 0.85rem;">
+            <div style="display: inline-block; padding: 0.4rem 0.8rem;
+            margin-top: 0.5rem; border-radius: 6px; background: #e7e8ea;
+            color: #383d41; font-size: 0.85rem;">
                 ◉ Generated
             </div>
             """,
@@ -559,27 +793,33 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    if not st.session_state.messages:
-        st.info(
-            'Ask a question about your indexed documents '
-            'to start a conversation.',
+    tab_chat, tab_index = st.tabs(['💬 Chat', '📥 Index'])
+
+    with tab_chat:
+        if not st.session_state.messages:
+            st.info(
+                'Ask a question about your indexed documents '
+                'to start a conversation.',
+            )
+
+        render_messages()
+
+        query = st.chat_input(
+            'Ask Ragnar something...',
         )
 
-    render_messages()
+        if query:
+            handle_query(query)
+            st.rerun()
 
-    query = st.chat_input(
-        'Ask Ragnar something...',
-    )
+        if st.session_state.messages:
+            st.divider()
+            render_metrics(
+                st.session_state.messages,
+            )
 
-    if query:
-        handle_query(query)
-        st.rerun()
-
-    if st.session_state.messages:
-        st.divider()
-        render_metrics(
-            st.session_state.messages,
-        )
+    with tab_index:
+        render_index_tab()
 
 
 if __name__ == '__main__':

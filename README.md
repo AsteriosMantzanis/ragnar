@@ -18,18 +18,18 @@
 
 Ragnar is a RAG (Retrieval-Augmented Generation) framework built around one idea: every stage of the pipeline is swappable behind an interface. Bring your own embedding models, your own LLM, your own vector store adapter — Ragnar handles orchestration, caching, session management, reranking, grounding, and observability around them.
 
-It ships as a FastAPI service with a Streamlit reference UI, fully containerized, with a hybrid dense+sparse retrieval stack and a 7-step query pipeline (rewrite → expand → retrieve → dedupe → rerank → generate → ground) that runs on every request.
+It ships as a FastAPI service with a Streamlit reference UI, fully containerized, with a hybrid dense+sparse retrieval stack and a 5-step query pipeline (retrieve → dedupe → rerank → generate → ground) that runs on every request.
 
 ## Why Ragnar
 
-Most RAG demos hardcode a vector store, an embedding model, and an LLM provider, then call it a framework. Ragnar instead defines an `interfaces/` ABC for every moving part — loader, chunker, embedder, retriever, reranker, rewriter, expander, generator, grounder, session store, cache — and ships one concrete implementation per interface. Swapping Qdrant for another vector DB, or Ollama for a hosted LLM, means writing one adapter class, not forking the pipeline.
+Most RAG demos hardcode a vector store, an embedding model, and an LLM provider, then call it a framework. Ragnar instead defines an `interfaces/` ABC for every moving part — loader, chunker, embedder, retriever, reranker, generator, grounder, session store, cache — and ships one concrete implementation per interface. Swapping Qdrant for another vector DB, or Ollama for a hosted LLM, means writing one adapter class, not forking the pipeline.
 
 ## Features
 
 - **Hybrid retrieval** — dense (`nomic-embed-text`) + sparse (SPLADE) vectors fused via Reciprocal Rank Fusion in Qdrant
 - **Two indexing/query strategies** — `flat` (single-collection chunk retrieval) and `hierarchical` (parent section + child subsection collections, linked and retrieved together)
-- **Query pipeline with 7 tracked stages** — LLM query rewriting, multi-query expansion, retrieval, deduplication, cross-encoder reranking, generation, and answer grounding — each stage timed and recorded per request
-- **Answer grounding** — every generated claim is checked against retrieved context via an NLI cross-encoder (`cross-encoder/nli-deberta-v3-xsmall`), and a grounded-percentage score is returned with the response
+- **Query pipeline with 5 tracked stages** — retrieval, deduplication, cross-encoder reranking, generation, and answer grounding — each stage timed and recorded per request
+- **Answer grounding** — every generated claim is checked against retrieved context via an NLI cross-encoder (`cross-encoder/nli-deberta-v3-base`), and a grounded-percentage score is returned with the response
 - **Semantic response caching** — a Qdrant-backed semantic cache short-circuits repeat first-turn questions (cosine threshold 0.90, 30-day TTL), skipped for follow-up turns in a conversation
 - **Session-aware conversations** — Redis-backed (or in-memory) session store carries the last few exchanges into each new query as context
 - **Document ingestion via Docling** — PDF/DOCX parsing with table and layout extraction, chunked at section or subsection granularity
@@ -55,8 +55,6 @@ ragnar/
 │   └── sparse/              # FastEmbed sparse embedder (SPLADE)
 ├── retrieval/             # dense, sparse, and hybrid (RRF) Qdrant retrievers
 ├── rerank/                # FastEmbed cross-encoder reranker
-├── rewrite/               # LLM-based query rewriter (uses conversation context)
-├── expand/                # LLM-based query expansion (multi-query / step-back)
 ├── grounding/              # HF NLI cross-encoder grounding check
 ├── generation/             # answer generator (LLM + Jinja2 prompt templates)
 ├── cache/                 # Qdrant-backed semantic response cache
@@ -70,17 +68,15 @@ ragnar/
 
 ### Query flow
 
-Every call to `BaseQueryPipeline.query()` runs the same seven tracked steps, with the retrieval step overridden per strategy (flat vs. hierarchical):
+Every call to `BaseQueryPipeline.query()` runs the same five tracked steps, with the retrieval step overridden per strategy (flat vs. hierarchical):
 
-1. **Rewrite** — the query is rewritten in light of recent conversation history
-2. **Expand** — the rewritten query is expanded into multiple sub-queries
-3. **Retrieve** — each sub-query is run against the vector store (single collection for `flat`, linked parent/child collections for `hierarchical`)
-4. **Deduplicate** — results across sub-queries are merged by chunk ID
-5. **Rerank** — a cross-encoder reranks the deduplicated set and keeps the top-k
-6. **Generate** — an LLM answers the original query using the reranked context
-7. **Ground** — each claim in the answer is checked against the context, producing a grounded-percentage score
+1. **Retrieve** — the query is run against the vector store (single collection for `flat`, linked parent/child collections for `hierarchical`)
+2. **Deduplicate** — results are merged by chunk ID
+3. **Rerank** — a cross-encoder reranks the deduplicated set and keeps the top-k
+4. **Generate** — an LLM answers the query using the reranked context
+5. **Ground** — each claim in the answer is checked against the context, producing a grounded-percentage score
 
-A semantic cache lookup runs before step 1 (and a cache write after step 7) only on the first turn of a session, so follow-up questions always execute the full pipeline with conversation context.
+A semantic cache lookup runs before step 1 (and a cache write after step 5) only on the first turn of a session, so follow-up questions always execute the full pipeline.
 
 ## Requirements
 
@@ -105,7 +101,7 @@ docker compose up --build
 - API: [http://localhost:8000/docs](http://localhost:8000/docs)
 - UI: [http://localhost:8501](http://localhost:8501)
 
-The `ollama` service automatically pulls `LLM_MODEL` (default `gemma2:2b`) on first boot.
+The `ollama` service automatically pulls `LLM_MODEL` (default `qwen2.5:3b`) on first boot.
 
 ### Local development
 
@@ -131,8 +127,8 @@ Ragnar is configured entirely through environment variables (see `.env`):
 | `dense_embed_model` | FastEmbed dense embedding model | `nomic-ai/nomic-embed-text-v1.5-Q` |
 | `sparse_embed_model` | FastEmbed sparse embedding model | `prithivida/Splade_PP_en_v1` |
 | `rerank_model` | Cross-encoder reranking model | `jinaai/jina-reranker-v2-base-multilingual` |
-| `grounding_model` | NLI cross-encoder for answer grounding | `cross-encoder/nli-deberta-v3-xsmall` |
-| `LLM_MODEL` | Ollama model tag | `gemma2:2b` |
+| `grounding_model` | NLI cross-encoder for answer grounding | `cross-encoder/nli-deberta-v3-base` |
+| `LLM_MODEL` | Ollama model tag | `qwen2.5:3b` |
 | `OLLAMA_URL` | Ollama base URL | `http://localhost:11434` |
 | `QDRANT_URL` | Qdrant base URL | `http://localhost:6333` |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
@@ -188,7 +184,8 @@ Because pipelines depend only on interfaces, no other code needs to change.
 
 - Populate `ragnar/evals/` with RAGAS-based evaluation harnesses
 - OpenTelemetry tracing across pipeline steps (currently custom `QueryTracker` timing only)
-
+- Agent-based (v2) query pipeline, building on the existing ABC/factory pattern
+- Automated test suite (none yet)
 
 ## License
 

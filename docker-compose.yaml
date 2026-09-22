@@ -42,7 +42,7 @@ services:
       - redis
     volumes:
       - ./ragnar:/app/ragnar:ro
-      - path/to/your/docs:/docs:ro # placeholder - change to your actual path
+      - C:/Users/aster/Desktop/manuals:/docs:ro # placeholder - change to your actual path
 
   ui:
     build:

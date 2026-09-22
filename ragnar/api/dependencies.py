@@ -10,7 +10,6 @@ from ragnar.chunkers.section_chunker import SectionChunker
 from ragnar.chunkers.subsection_chunker import SubsectionChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
-from ragnar.expand.llm_query_expander import LLMQueryExpander
 from ragnar.generation.simple_generator import Generator
 from ragnar.grounding.hf_grounding import HF_Grounding
 from ragnar.index.Qdrant_Indexer import QdrantIndexer
@@ -30,7 +29,6 @@ from ragnar.pipelines.query.hierarchical_query_pipeline import (
 from ragnar.prompts.prompt_loader import PromptLoader
 from ragnar.rerank.fast_embed_reranker import FastEmbedReranker
 from ragnar.retrieval.hybrid_qdrant_retriever import HybridQdrantRetriever
-from ragnar.rewrite.query_rewriter import LLMQueryRewriter
 from ragnar.session.in_memory_session_store import InMemorySessionStore
 from ragnar.session.interfaces.session_store import BaseSessionStore
 from ragnar.session.redis_session_store import RedisSessionStore
@@ -95,24 +93,6 @@ def get_reranker():
     """Factory for reranker"""
     logger.info('Creating FastEmbedReranker')
     return FastEmbedReranker()
-
-
-@lru_cache
-def get_rewriter():
-    """Factory for query rewriter"""
-    logger.info('Creating LLMQueryRewriter')
-    llm = get_llm_adapter()
-    prompt_loader = get_prompt_loader()
-    return LLMQueryRewriter(llm, prompt_loader)
-
-
-@lru_cache
-def get_expander():
-    """Factory for query expander"""
-    logger.info('Creating LLMQueryExpander')
-    llm = get_llm_adapter()
-    prompt_loader = get_prompt_loader()
-    return LLMQueryExpander(llm, prompt_loader)
 
 
 @lru_cache
@@ -222,8 +202,6 @@ def get_flat_query_pipeline() -> BaseQueryPipeline:
     reranker = get_reranker()
     generator = get_generator()
     grounder = get_grounder()
-    rewriter = get_rewriter()
-    expander = get_expander()
     session_store = get_session_store()
     semantic_cache = get_semantic_cache()
 
@@ -234,8 +212,6 @@ def get_flat_query_pipeline() -> BaseQueryPipeline:
         reranker=reranker,
         generator=generator,
         grounder=grounder,
-        rewriter=rewriter,
-        expander=expander,
         session_store=session_store,
         semantic_cache=semantic_cache,
         collection_name=CHILD_COLLECTION,
@@ -252,8 +228,6 @@ def get_hierarchical_query_pipeline() -> BaseQueryPipeline:
     reranker = get_reranker()
     generator = get_generator()
     grounder = get_grounder()
-    rewriter = get_rewriter()
-    expander = get_expander()
     session_store = get_session_store()
     semantic_cache = get_semantic_cache()
 
@@ -264,8 +238,6 @@ def get_hierarchical_query_pipeline() -> BaseQueryPipeline:
         reranker=reranker,
         generator=generator,
         grounder=grounder,
-        rewriter=rewriter,
-        expander=expander,
         session_store=session_store,
         semantic_cache=semantic_cache,
         parent_collection_name=PARENT_COLLECTION,

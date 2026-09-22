@@ -15,19 +15,35 @@ load_dotenv()
 
 
 class RedisSessionStore(BaseSessionStore):
-    def __init__(self, redis_url: str):
-        self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+    def __init__(self, redis_url: str | None = None):
+        self.redis_url = redis_url or os.getenv(
+            'REDIS_URL', 'redis://localhost:6379',
+        )
         self.client: redis.Redis | None = None
 
     async def connect(self):
-        self.client = await redis.from_url(self.redis_url)
+        if self.client is None:
+            self.client = redis.from_url(self.redis_url, decode_responses=True)
+            await self.client.ping()
         logger.info(f"Connected to Redis: {self.redis_url}")
 
-    async def get(self, session_id: str) -> Session | None:
-        assert self.client is not None, 'Redis not connected. '
-        'Call connect() first.'
+    async def disconnect(self):
+        if self.client is not None:
+            await self.client.aclose()
+            self.client = None
 
-        data = await self.client.get(f"session:{session_id}")
+    async def _ensure_connected(self):
+        if self.client is None:
+            await self.connect()
+
+    async def get(self, session_id: str) -> Session | None:
+        await self._ensure_connected()
+
+        client = self.client
+        if client is None:
+            raise RuntimeError('Redis client is not connected')
+
+        data = await client.get(f"session:{session_id}")
         if not data:
             return None
 
@@ -48,8 +64,11 @@ class RedisSessionStore(BaseSessionStore):
         return session
 
     async def save(self, session: Session) -> None:
-        assert self.client is not None, 'Redis not connected. '
-        'Call connect() first.'
+        await self._ensure_connected()
+
+        client = self.client
+        if client is None:
+            raise RuntimeError('Redis client is not connected')
 
         session_dict = {
             'session_id': session.session_id,
@@ -65,13 +84,17 @@ class RedisSessionStore(BaseSessionStore):
             ],
         }
 
-        await self.client.set(
+        await client.set(
             f"session:{session.session_id}",
             json.dumps(session_dict),
             ex=86400 * 7,
         )
 
     async def delete(self, session_id: str) -> None:
-        assert self.client is not None, 'Redis not connected. '
-        'Call connect() first.'
-        await self.client.delete(f"session:{session_id}")
+        await self._ensure_connected()
+
+        client = self.client
+        if client is None:
+            raise RuntimeError('Redis client is not connected')
+
+        await client.delete(f"session:{session_id}")

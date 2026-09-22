@@ -20,16 +20,13 @@ class HierarchicalQueryPipeline(BaseQueryPipeline):
         self.child_collection_name = child_collection_name
         self.linkage_id = linkage_id
 
-    async def _retrieve(self, expanded_queries: list[str]) -> list[dict]:
+    async def _retrieve(self, query: str) -> list[dict]:
         """Hierarchical retrieval (child + parent)"""
-        all_results = []
-        for q in expanded_queries:
-            results = await self.retriever.retrieve_hierarchical(
-                query=q,
-                parent_collection_name=self.parent_collection_name,
-                child_collection_name=self.child_collection_name,
-                linkage_id=self.linkage_id,
-                top_k=10,
-            )
-            all_results.extend(results[self.child_collection_name])
-        return all_results
+        results = await self.retriever.retrieve_hierarchical(
+            query=query,
+            parent_collection_name=self.parent_collection_name,
+            child_collection_name=self.child_collection_name,
+            linkage_id=self.linkage_id,
+            top_k=10,
+        )
+        return results[self.child_collection_name]

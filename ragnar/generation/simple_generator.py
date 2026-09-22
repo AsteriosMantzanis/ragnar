@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from loguru import logger
 
+from ragnar.api.models import QueryResponse
 from ragnar.generation.interfaces.base_generator import BaseGenerator
 from ragnar.llm.interfaces.llm_adapter import BaseLLMAdapter
 from ragnar.prompts.prompt_loader import PromptLoader
@@ -21,14 +24,29 @@ class Generator(BaseGenerator):
         query: str,
         context: list[dict],
         prompt_template: str = 'simple_qa',
-    ) -> str:
+        response_schema: dict | None = None,
+    ) -> str | dict:
         logger.info(f"Generating answer from {len(context)} context items")
+
+        if response_schema is None:
+            response_schema = QueryResponse.model_json_schema()
 
         context_text = '\n\n'.join([c['text'] for c in context])
         prompt = self.prompt_loader.load(
             prompt_template, context=context_text, query=query,
         )
-        return await self.llm.generate(prompt)
+        result = await self.llm.generate(prompt, format=response_schema)
+
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError:
+                logger.warning(
+                    'Structured generation returned non-JSON content',
+                )
+                return {'answer': result}
+
+        return result
 
     async def generate_hierarchical(
         self,
@@ -36,11 +54,15 @@ class Generator(BaseGenerator):
         context: dict[str, list[dict]],
         generation_entity: str,
         prompt_template: str = 'simple_qa',
-    ) -> str:
+        response_schema: dict | None = None,
+    ) -> str | dict:
         logger.info(
             f"Generating hierarchical answer, "
             f"primary entity: {generation_entity}",
         )
+
+        if response_schema is None:
+            response_schema = QueryResponse.model_json_schema()
 
         # Extract text from all entities
         all_texts = []
@@ -57,4 +79,15 @@ class Generator(BaseGenerator):
         prompt = self.prompt_loader.load(
             prompt_template, context=context_text, query=query,
         )
-        return await self.llm.generate(prompt)
+        result = await self.llm.generate(prompt, format=response_schema)
+
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError:
+                logger.warning(
+                    'Structured generation returned non-JSON content',
+                )
+                return {'answer': result}
+
+        return result
