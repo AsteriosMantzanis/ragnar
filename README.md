@@ -18,7 +18,7 @@
 
 Ragnar is a RAG (Retrieval-Augmented Generation) framework built around one idea: every stage of the pipeline is swappable behind an interface. Bring your own embedding models, your own LLM, your own vector store adapter — Ragnar handles orchestration, caching, session management, reranking, grounding, and observability around them.
 
-It ships as a FastAPI service with a Streamlit reference UI, fully containerized, with a hybrid dense+sparse retrieval stack and a 5-step query pipeline (retrieve → dedupe → rerank → generate → ground) that runs on every request.
+It ships as a FastAPI service with a Streamlit reference UI, fully containerized, with a hybrid dense+sparse retrieval stack and a 4-step query pipeline (retrieve → rerank → generate → ground) that runs on every request.
 
 ## Why Ragnar
 
@@ -28,7 +28,7 @@ Most RAG demos hardcode a vector store, an embedding model, and an LLM provider,
 
 - **Hybrid retrieval** — dense (`nomic-embed-text`) + sparse (SPLADE) vectors fused via Reciprocal Rank Fusion in Qdrant
 - **Two indexing/query strategies** — `flat` (single-collection chunk retrieval) and `hierarchical` (parent section + child subsection collections, linked and retrieved together)
-- **Query pipeline with 5 tracked stages** — retrieval, deduplication, cross-encoder reranking, generation, and answer grounding — each stage timed and recorded per request
+- **Query pipeline with 4 tracked stages** — retrieval, cross-encoder reranking, generation, and answer grounding — each stage timed and recorded per request
 - **Answer grounding** — every generated claim is checked against retrieved context via an NLI cross-encoder (`cross-encoder/nli-deberta-v3-base`), and a grounded-percentage score is returned with the response
 - **Semantic response caching** — a Qdrant-backed semantic cache short-circuits repeat first-turn questions (cosine threshold 0.90, 30-day TTL), skipped for follow-up turns in a conversation
 - **Session-aware conversations** — Redis-backed (or in-memory) session store carries the last few exchanges into each new query as context
@@ -68,15 +68,14 @@ ragnar/
 
 ### Query flow
 
-Every call to `BaseQueryPipeline.query()` runs the same five tracked steps, with the retrieval step overridden per strategy (flat vs. hierarchical):
+Every call to `BaseQueryPipeline.query()` runs the same four tracked steps, with the retrieval step overridden per strategy (flat vs. hierarchical):
 
-1. **Retrieve** — the query is run against the vector store (single collection for `flat`, linked parent/child collections for `hierarchical`)
-2. **Deduplicate** — results are merged by chunk ID
-3. **Rerank** — a cross-encoder reranks the deduplicated set and keeps the top-k
-4. **Generate** — an LLM answers the query using the reranked context
-5. **Ground** — each claim in the answer is checked against the context, producing a grounded-percentage score
+1. **Retrieve** — the query is run against the vector store (single collection for `flat`, linked parent/child collections for `hierarchical`) — Qdrant's own RRF fusion means this returns each chunk at most once, so no separate dedup step is needed
+2. **Rerank** — a cross-encoder reranks the retrieved set and keeps the top-k
+3. **Generate** — an LLM answers the query using the reranked context
+4. **Ground** — each claim in the answer is checked against the context, producing a grounded-percentage score
 
-A semantic cache lookup runs before step 1 (and a cache write after step 5) only on the first turn of a session, so follow-up questions always execute the full pipeline.
+A semantic cache lookup runs before step 1 (and a cache write after step 4) only on the first turn of a session, so follow-up questions always execute the full pipeline.
 
 ## Requirements
 

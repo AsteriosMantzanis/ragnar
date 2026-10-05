@@ -14,7 +14,7 @@ load_dotenv()
 class FastEmbedReranker(BaseCrossEncoder):
     def __init__(self, batch_size: int = 5):
         self.model_name = os.getenv(
-            'rerank_model', 'jinaai/jina-reranker-v2-base-multilingual',
+            'rerank_model', 'jinaai/jina-reranker-v1-turbo-en',
         )
         self.model = TextCrossEncoder(self.model_name)
         self.batch_size = batch_size

@@ -29,6 +29,7 @@ class IndexRequest(BaseModel):
 
 
 class IndexResponse(BaseModel):
+    job_id: str
     status: str
     documents_indexed: int
     chunks: int | None = None

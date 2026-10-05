@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 from dataclasses import asdict
+from typing import Any
 
 from loguru import logger
 
@@ -16,7 +17,6 @@ from ragnar.observability.tracker import QueryTracker
 from ragnar.prompts.prompt_loader import PromptLoader
 from ragnar.rerank.interfaces.base_cross_encoder import BaseCrossEncoder
 from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
-from ragnar.session.in_memory_session_store import InMemorySessionStore
 from ragnar.session.interfaces.session_store import BaseSessionStore
 from ragnar.session.session import Session
 
@@ -40,7 +40,7 @@ class BaseQueryPipeline(ABC):
         self.reranker = reranker
         self.generator = generator
         self.grounder = grounder
-        self.session_store = session_store or InMemorySessionStore()
+        self.session_store = session_store
         self.semantic_cache = semantic_cache
         self.metrics_collector = MetricsCollector()
 
@@ -50,6 +50,22 @@ class BaseQueryPipeline(ABC):
     async def _retrieve(self, query: str) -> list[dict]:
         """Retrieve results based on strategy"""
 
+    @staticmethod
+    def _normalize_answer(generated_answer: str | dict[str, Any]) -> str:
+        """Normalize plain or structured generator output to answer text."""
+        if isinstance(generated_answer, str):
+            return generated_answer
+
+        if isinstance(generated_answer, dict):
+            answer = generated_answer.get('answer')
+            if isinstance(answer, str):
+                return answer
+
+        raise TypeError(
+            'Generator must return a string or a dict containing a string '
+            "'answer' field",
+        )
+
     async def query(self, user_query: str, session_id: str) -> dict:
         """Execute full query pipeline"""
 
@@ -57,8 +73,12 @@ class BaseQueryPipeline(ABC):
         tracker = QueryTracker()
         tracker.start()
 
+        session_store = self.session_store
+        if session_store is None:
+            raise RuntimeError('Query pipeline requires a session store')
+
         # Get or create session FIRST
-        session = await self.session_store.get(session_id)
+        session = await session_store.get(session_id)
         if not session:
             session = Session(session_id=session_id)
             logger.info(f"Created new session: {session_id}")
@@ -112,53 +132,34 @@ class BaseQueryPipeline(ABC):
 
             # 1. Retrieve (strategy-specific)
             async with tracker.step('retrieval'):
-                logger.info('Step 1/5: Retrieving')
+                logger.info('Step 1/4: Retrieving')
                 all_results = await self._retrieve(user_query)
                 logger.info(f"Retrieved {len(all_results)} results")
 
-            # 2. Deduplicate
-            async with tracker.step('deduplication'):
-                logger.info('Step 2/5: Deduplicating')
-                unique_results = {}
-                for r in all_results:
-                    chunk_id = r.get('chunk_id')
-                    if chunk_id not in unique_results:
-                        unique_results[chunk_id] = r
-                logger.info(f"Deduplicated to {len(unique_results)}")
-
-            # 3. Rerank
+            # 2. Rerank
             async with tracker.step('reranking'):
-                logger.info('Step 3/5: Reranking')
+                logger.info('Step 2/4: Reranking')
                 reranked = await self.reranker.score(
                     query=user_query,
-                    results=list(unique_results.values()),
+                    results=all_results,
                     top_k=5,
                 )
                 logger.info(f"Top-{len(reranked)} reranked")
 
-            # 4. Generate
+            # 3. Generate
             async with tracker.step('generation'):
-                logger.info('Step 4/5: Generating answer')
-                generated = await self.generator.generate(
+                logger.info('Step 3/4: Generating answer')
+                generated_answer = await self.generator.generate(
                     query=user_query,
                     context=reranked,
                     prompt_template='simple_qa',
                 )
-
-                if isinstance(generated, dict):
-                    answer = str(
-                        generated.get('answer')
-                        or generated.get('response')
-                        or '',
-                    )
-                else:
-                    answer = str(generated)
-
+                answer = self._normalize_answer(generated_answer)
                 logger.info(f"Generated ({len(answer)} chars)")
 
-            # 5. Ground
+            # 4. Ground
             async with tracker.step('grounding'):
-                logger.info('Step 5/5: Grounding answer')
+                logger.info('Step 4/4: Grounding answer')
                 grounding = await self.grounder.ground(answer, reranked)
                 grounded_count = sum(1 for g in grounding if g['grounded'])
                 grounded_pct = (
@@ -172,7 +173,7 @@ class BaseQueryPipeline(ABC):
                 'assistant', answer,
                 sources=reranked, grounding=grounding,
             )
-            await self.session_store.save(session)
+            await session_store.save(session)
 
             # Record metrics (full pipeline)
             total_s = tracker.end()

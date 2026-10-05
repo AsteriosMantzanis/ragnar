@@ -9,6 +9,7 @@ from ragnar.chunkers.interfaces.base_chunker import BaseChunker
 from ragnar.index.interfaces.base_indexer import BaseIndexer
 from ragnar.loaders.interfaces.base_loader import BaseLoader
 from ragnar.pipelines.interfaces.indexing_pipeline import BaseIndexPipeline
+from ragnar.utils.memory import release_memory
 
 
 class FlatIndexPipeline(BaseIndexPipeline):
@@ -34,21 +35,19 @@ class FlatIndexPipeline(BaseIndexPipeline):
         path = Path(path)
         logger.info(f"Starting flat index pipeline: {path}")
 
-        # Load all files
-        logger.info('Step 1/4: Loading documents')
-        documents = self.loader.load(path)
-        logger.info(f"Loaded {len(documents)} documents")
+        # Stream files so Docling does not retain the whole corpus.
+        logger.info('Step 1/4: Streaming documents')
+        progress = self.loader.resume_progress()
+        documents_indexed = progress.get('documents_indexed', 0)
+        total_chunks = progress.get('chunks', 0)
+        loaded_any = documents_indexed > 0
 
-        if not documents:
-            logger.warning('No documents loaded')
-            return {'status': 'no_documents', 'documents_indexed': 0}
-
-        total_chunks = 0
-
-        # Process each document
-        for i, doc in enumerate(documents, 1):
+        # Process one document at a time.
+        for document_number, doc in self.loader.iter_load_indexed(path):
+            loaded_any = True
+            documents_indexed = document_number
             logger.info(
-                f"Processing document {i}/{len(documents)}: "
+                f"Processing document {document_number}: "
                 f"{doc.metadata['filename']}",
             )
 
@@ -63,11 +62,26 @@ class FlatIndexPipeline(BaseIndexPipeline):
             logger.info('  Indexing chunks')
             await self.indexer.index(chunks)
 
+            del chunks
+            del doc
+            release_memory()
+            self.loader.mark_completed(
+                document_number,
+                {
+                    'documents_indexed': documents_indexed,
+                    'chunks': total_chunks,
+                },
+            )
+
+        if not loaded_any:
+            logger.warning('No documents loaded')
+            return {'status': 'no_documents', 'documents_indexed': 0}
+
         logger.info('Flat indexing complete')
 
         return {
             'status': 'indexed',
-            'documents_indexed': len(documents),
+            'documents_indexed': documents_indexed,
             'chunks': total_chunks,
             'collection': self.collection_name,
         }

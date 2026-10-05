@@ -6,20 +6,14 @@ from functools import lru_cache
 from loguru import logger
 
 from ragnar.cache.semantic_qdrant_cache import QdrantSemanticCache
-from ragnar.chunkers.section_chunker import SectionChunker
-from ragnar.chunkers.subsection_chunker import SubsectionChunker
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.generation.simple_generator import Generator
 from ragnar.grounding.hf_grounding import HF_Grounding
-from ragnar.index.Qdrant_Indexer import QdrantIndexer
+from ragnar.indexing.pipeline_factory import build_index_pipeline
 from ragnar.llm.ollama_llm import OllamaLLMAdapter
 from ragnar.loaders.docling_loader import DoclingLoader
 from ragnar.loaders.interfaces.base_loader import BaseLoader
-from ragnar.pipelines.index.flat_index_pipeline import FlatIndexPipeline
-from ragnar.pipelines.index.hier_index_pipeline import (
-    HierarchicalIndexPipeline,
-)
 from ragnar.pipelines.interfaces.indexing_pipeline import BaseIndexPipeline
 from ragnar.pipelines.interfaces.query_pipeline import BaseQueryPipeline
 from ragnar.pipelines.query.flat_query_pipeline import FlatQueryPipeline
@@ -29,7 +23,6 @@ from ragnar.pipelines.query.hierarchical_query_pipeline import (
 from ragnar.prompts.prompt_loader import PromptLoader
 from ragnar.rerank.fast_embed_reranker import FastEmbedReranker
 from ragnar.retrieval.hybrid_qdrant_retriever import HybridQdrantRetriever
-from ragnar.session.in_memory_session_store import InMemorySessionStore
 from ragnar.session.interfaces.session_store import BaseSessionStore
 from ragnar.session.redis_session_store import RedisSessionStore
 
@@ -49,22 +42,27 @@ logger.info(
 # Core
 
 
-@lru_cache
 def get_loader() -> BaseLoader:
-    """Factory for document loader"""
+    """Factory for document loader.
+
+    Deliberately NOT cached: a DoclingLoader holds the layout/table models
+    (torch, GBs of RAM). A fresh one per index request lets the memory be
+    released when the request ends, instead of sitting next to the query
+    models forever.
+    """
     logger.info('Creating DoclingLoader')
     return DoclingLoader()
 
 
 @lru_cache
-def get_session_store() -> BaseSessionStore:
+def get_session_store() -> BaseSessionStore | None:
     """Factory for session store"""
     if SESSION_STORE == 'redis':
         logger.info(f"Using Redis session store: {REDIS_URL}")
         return RedisSessionStore(REDIS_URL)
     else:
-        logger.info('Using in-memory session store')
-        return InMemorySessionStore()
+        logger.info('No session store configured.')
+        return None
 
 
 @lru_cache
@@ -85,7 +83,11 @@ def get_llm_adapter():
 def get_retriever():
     """Factory for retriever"""
     logger.info(f"Creating HybridQdrantRetriever: {QDRANT_URL}")
-    return HybridQdrantRetriever(url=QDRANT_URL)
+    return HybridQdrantRetriever(
+        url=QDRANT_URL,
+        dense_embedding=get_dense_embedding(),
+        sparse_embedding=get_sparse_embedding(),
+    )
 
 
 @lru_cache
@@ -125,67 +127,49 @@ def get_sparse_embedding() -> SparseFastEmbedding:
 
 # Index
 
-def get_flat_index_pipeline() -> BaseIndexPipeline:
+def get_flat_index_pipeline(
+    loader: BaseLoader | None = None,
+) -> BaseIndexPipeline:
     """Factory for flat index pipeline"""
     logger.info('Creating FlatIndexPipeline')
 
-    loader = get_loader()
-    chunker = SubsectionChunker()
-
-    indexer = QdrantIndexer(
+    return build_index_pipeline(
+        'flat',
+        loader=loader if loader is not None else get_loader(),
         dense_embedder=get_dense_embedding(),
         sparse_embedder=get_sparse_embedding(),
-        collection_name=CHILD_COLLECTION,
-        url=QDRANT_URL,
-    )
-
-    return FlatIndexPipeline(
-        loader=loader,
-        chunker=chunker,
-        indexer=indexer,
-        collection_name=CHILD_COLLECTION,
-    )
-
-
-def get_hierarchical_index_pipeline() -> BaseIndexPipeline:
-    """Factory for hierarchical index pipeline"""
-    logger.info('Creating HierarchicalIndexPipeline')
-
-    loader = get_loader()
-    parent_chunker = SectionChunker()
-    child_chunker = SubsectionChunker()
-
-    parent_indexer = QdrantIndexer(
-        dense_embedder=get_dense_embedding(),
-        sparse_embedder=get_sparse_embedding(),
-        collection_name=PARENT_COLLECTION,
-        url=QDRANT_URL,
-    )
-
-    child_indexer = QdrantIndexer(
-        dense_embedder=get_dense_embedding(),
-        sparse_embedder=get_sparse_embedding(),
-        collection_name=CHILD_COLLECTION,
-        url=QDRANT_URL,
-    )
-
-    return HierarchicalIndexPipeline(
-        loader=loader,
-        parent_chunker=parent_chunker,
-        child_chunker=child_chunker,
-        parent_indexer=parent_indexer,
-        child_indexer=child_indexer,
+        qdrant_url=QDRANT_URL,
         parent_collection_name=PARENT_COLLECTION,
         child_collection_name=CHILD_COLLECTION,
     )
 
 
-def get_index_pipeline(strategy: str = 'hierarchical') -> BaseIndexPipeline:
+def get_hierarchical_index_pipeline(
+    loader: BaseLoader | None = None,
+) -> BaseIndexPipeline:
+    """Factory for hierarchical index pipeline"""
+    logger.info('Creating HierarchicalIndexPipeline')
+
+    return build_index_pipeline(
+        'hierarchical',
+        loader=loader if loader is not None else get_loader(),
+        dense_embedder=get_dense_embedding(),
+        sparse_embedder=get_sparse_embedding(),
+        qdrant_url=QDRANT_URL,
+        parent_collection_name=PARENT_COLLECTION,
+        child_collection_name=CHILD_COLLECTION,
+    )
+
+
+def get_index_pipeline(
+    strategy: str = 'hierarchical',
+    loader: BaseLoader | None = None,
+) -> BaseIndexPipeline:
     """Factory for index pipeline by strategy"""
     if strategy == 'hierarchical':
-        return get_hierarchical_index_pipeline()
+        return get_hierarchical_index_pipeline(loader)
     elif strategy == 'flat':
-        return get_flat_index_pipeline()
+        return get_flat_index_pipeline(loader)
     else:
         raise ValueError(f"Unknown index pipeline strategy: {strategy}")
 
@@ -265,4 +249,26 @@ def get_semantic_cache() -> QdrantSemanticCache:
         collection_name='ragnar_semantic_cache',
         threshold=0.90,
         ttl_seconds=2592000,  # 30 days
+        embedding=get_dense_embedding(),
     )
+
+
+# Startup
+
+
+def preload_models() -> None:
+    """Load query-time models only.
+
+    Document ingestion models are owned exclusively by the
+    dedicated indexer worker.
+    """
+    logger.info('Preloading query models...')
+
+    get_dense_embedding()
+    get_sparse_embedding()
+    get_reranker()
+    get_grounder()
+    get_semantic_cache()
+    get_retriever()
+
+    logger.info('All query models loaded')

@@ -149,6 +149,14 @@ class RagnarClient:
 
         return response.json()
 
+    def retry_index(self, job_id: str) -> dict:
+        response = requests.post(
+            f"{self.base_url}/index/{job_id}/retry",
+            timeout=None,
+        )
+        response.raise_for_status()
+        return response.json()
+
 
 @st.cache_resource
 def get_client() -> RagnarClient:
@@ -389,12 +397,14 @@ def run_with_live_logs(label: str, operation):
 
         def render_logs() -> None:
             if logs:
-                # Show the newest entries last, like a terminal.
-                log_area.markdown(
-                    '\\n\\n'.join(
+                # One log entry per line, newest last, like a terminal.
+                log_area.code(
+                    '\n'.join(
                         render_log_entry(entry)
                         for entry in logs[-80:]
                     ),
+                    language=None,
+                    wrap_lines=False,
                 )
             else:
                 log_area.caption('Waiting for API logs...')
@@ -440,18 +450,30 @@ def run_with_live_logs(label: str, operation):
 # Index
 
 
-def handle_index(path: str, strategy: str) -> None:
+def handle_index(
+    path: str,
+    strategy: str,
+    retry_job_id: str | None = None,
+) -> None:
     client: RagnarClient = st.session_state.client
 
     try:
+        if retry_job_id:
+            label = f"Retrying job {retry_job_id}..."
+            def operation(): return client.retry_index(retry_job_id)
+        else:
+            label = f"Indexing '{path}' ({strategy})..."
+            def operation(): return client.index(path=path, strategy=strategy)
+
         result = run_with_live_logs(
-            f"Indexing '{path}' ({strategy})...",
-            lambda: client.index(path=path, strategy=strategy),
+            label,
+            operation,
         )
 
         st.session_state.index_history.insert(
             0,
             {
+                'Job': result.get('job_id'),
                 'Time': datetime.now().strftime('%H:%M:%S'),
                 'Path': path,
                 'Strategy': strategy,
@@ -472,6 +494,8 @@ def handle_index(path: str, strategy: str) -> None:
             f"Indexed {result.get('documents_indexed', 0)} document(s) "
             f"using the '{strategy}' strategy.",
         )
+        if retry_job_id:
+            st.session_state.pop('failed_index_job', None)
 
     except requests.exceptions.Timeout:
         st.error(
@@ -485,7 +509,22 @@ def handle_index(path: str, strategy: str) -> None:
         )
 
     except requests.exceptions.HTTPError as exc:
-        detail = exc.response.text if exc.response is not None else str(exc)
+        detail = str(exc)
+        if exc.response is not None:
+            try:
+                payload = exc.response.json()
+                detail = payload.get('detail', detail)
+            except (ValueError, AttributeError):
+                detail = exc.response.text or detail
+        if isinstance(detail, dict):
+            failed_job_id = detail.get('job_id')
+            if failed_job_id:
+                st.session_state.failed_index_job = {
+                    'job_id': failed_job_id,
+                    'path': path,
+                    'strategy': strategy,
+                }
+            detail = detail.get('message', 'Indexing failed')
         st.error(f"Indexing failed: {detail}")
 
     except Exception as exc:
@@ -530,6 +569,24 @@ def render_index_tab() -> None:
             st.warning('Enter a path first.')
         else:
             handle_index(path.strip(), strategy)
+
+    failed_job = st.session_state.get('failed_index_job')
+    if failed_job:
+        st.warning(
+            f"Job {failed_job['job_id']} failed. Retry resumes from the "
+            'saved checkpoint when available; otherwise it reconverts.',
+        )
+        if st.button(
+            'Retry from checkpoint',
+            key=f"retry-index-{failed_job['job_id']}",
+            use_container_width=True,
+        ):
+            handle_index(
+                failed_job['path'],
+                failed_job['strategy'],
+                retry_job_id=failed_job['job_id'],
+            )
+            st.rerun()
 
     if st.session_state.index_history:
         st.divider()

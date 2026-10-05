@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
-    "docling[easyocr]>=2.114.0",
+    "docling>=2.130.0",
     "fastapi>=0.141.1",
     "fastembed>=0.8.0",
     "jinja2>=3.1",
@@ -29,6 +29,17 @@ evals = [
     "ragas>=0.3",
     "langchain-ollama>=0.3",
 ]
+
+# CPU-only torch on Linux (the Docker images). The default PyPI wheel drags
+# in ~15 nvidia-* CUDA packages (several GB) that a CPU container never uses.
+# Re-run `uv lock` after changing this.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["ragnar"]

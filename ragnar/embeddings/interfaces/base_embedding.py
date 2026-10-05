@@ -14,7 +14,11 @@ class BaseEmbedding(ABC):
         """Embedding dimension, or None for sparse embedders."""
 
     @abstractmethod
-    async def embed(self, text: list[str]) -> list[list[float]]:
+    async def embed(
+        self,
+        text: list[str],
+        batch_size: int | None = None,
+    ) -> list[list[float]]:
         """Generate an embedding for the given text.
 
         Args:

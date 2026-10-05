@@ -4,21 +4,26 @@ import os
 from typing import Any
 
 from qdrant_client import QdrantClient
+from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.http.models import FieldCondition
 from qdrant_client.http.models import Filter
 from qdrant_client.http.models import MatchAny
 
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.retrieval.interfaces.base_retriever import BaseRetriever
+from ragnar.utils.exceptions import CollectionNotFoundError
 
 
 class DenseQdrantRetriever(BaseRetriever):
     def __init__(
         self,
         url: str = os.getenv('QDRANT_URL', 'http://localhost:6333'),
+        embedding: DenseFastEmbedding | None = None,
     ):
         self.client = QdrantClient(url=url)
-        self.embedding = DenseFastEmbedding()
+        # Share the app-wide embedder when given; each new instance loads
+        # another copy of the ONNX model into memory.
+        self.embedding = embedding or DenseFastEmbedding()
 
     async def retrieve(
         self, query: str,
@@ -28,13 +33,21 @@ class DenseQdrantRetriever(BaseRetriever):
 
         query_dense_vector = await self.embedding.embed_query(query)
 
-        search_results = self.client.query_points(
-            collection_name=collection_name,
-            query=query_dense_vector,
-            using='text-dense',
-            limit=top_k,
-            with_payload=True,
-        )
+        try:
+            search_results = self.client.query_points(
+                collection_name=collection_name,
+                query=query_dense_vector,
+                using='text-dense',
+                limit=top_k,
+                with_payload=True,
+            )
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                raise CollectionNotFoundError(
+                    f"Collection '{collection_name}' not found — "
+                    'index documents before querying.',
+                ) from e
+            raise
 
         return [p.payload for p in search_results.points]
 
@@ -48,36 +61,43 @@ class DenseQdrantRetriever(BaseRetriever):
 
         query_dense_vector = await self.embedding.embed_query(query)
 
-        # 1. Search sections
-        child_results = self.client.query_points(
-            collection_name=child_collection_name,
-            query=query_dense_vector,
-            using='text-dense',
-            limit=top_k,
-            with_payload=True,
-        )
+        try:
+            # 1. Search sections
+            child_results = self.client.query_points(
+                collection_name=child_collection_name,
+                query=query_dense_vector,
+                using='text-dense',
+                limit=top_k,
+                with_payload=True,
+            )
 
-        # 2. Extract parent page IDs
-        link_ids = set()
-        for result in child_results.points:
-            ids = result.payload.get(linkage_id, [])
-            link_ids.update(ids)
+            # 2. Extract parent page IDs
+            link_ids = set()
+            for result in child_results.points:
+                ids = result.payload.get(linkage_id, [])
+                link_ids.update(ids)
 
-        # # 3. Fetch parent pages
-        parent_results, _ = self.client.scroll(
-            collection_name=parent_collection_name,
-            scroll_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key='chunk_id',
-                        match=MatchAny(any=list(link_ids)),
-                    ),
-                ],
-            ),
-            with_payload=True,
-
-
-        )
+            # # 3. Fetch parent pages
+            parent_results, _ = self.client.scroll(
+                collection_name=parent_collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key='chunk_id',
+                            match=MatchAny(any=list(link_ids)),
+                        ),
+                    ],
+                ),
+                with_payload=True,
+            )
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                raise CollectionNotFoundError(
+                    f"Collection '{parent_collection_name}' or "
+                    f"'{child_collection_name}' not found — "
+                    'index documents before querying.',
+                ) from e
+            raise
 
         # # 4. Return both
         return {

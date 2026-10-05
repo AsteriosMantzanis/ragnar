@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,19 +10,21 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from loguru import logger
 
-from ragnar.api.dependencies import get_index_pipeline
 from ragnar.api.dependencies import get_query_pipeline
 from ragnar.api.dependencies import get_session_store
+from ragnar.api.dependencies import preload_models
 from ragnar.api.models import IndexRequest
 from ragnar.api.models import IndexResponse
 from ragnar.api.models import MessageModel
 from ragnar.api.models import QueryRequest
 from ragnar.api.models import QueryResponse
 from ragnar.api.models import SessionResponse
+from ragnar.indexing.job_queue import IndexJobQueue
 from ragnar.observability.log_buffer import configure_log_buffer
 from ragnar.observability.log_buffer import get_logs
 from ragnar.observability.log_buffer import latest_cursor
 from ragnar.utils.logging import configure_logging
+
 
 configure_logging(level='INFO')
 
@@ -36,20 +39,26 @@ configure_log_buffer(level='INFO')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage app startup and shutdown"""
-    # Startup
     logger.info('Ragnar API starting up...')
+
+    preload_models()
+
     session_store = get_session_store()
 
-    if hasattr(session_store, 'connect'):
+    if session_store is not None and hasattr(session_store, 'connect'):
         await session_store.connect()
         logger.info('Session store connected')
 
+    app.state.index_queue = IndexJobQueue()
+    await app.state.index_queue.connect()
+
     yield
 
-    # Shutdown
     logger.info('Ragnar API shutting down...')
-    if hasattr(session_store, 'disconnect'):
+
+    await app.state.index_queue.close()
+
+    if session_store is not None and hasattr(session_store, 'disconnect'):
         await session_store.disconnect()
         logger.info('Session store disconnected')
 
@@ -115,45 +124,95 @@ async def query_endpoint(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def wait_for_index_job(
+    queue: IndexJobQueue,
+    job_id: str,
+) -> IndexResponse:
+    while True:
+        job = await queue.get(job_id)
+        if job is None:
+            raise RuntimeError(f"Index job disappeared: {job_id}")
+
+        status = job.get('status')
+        if status == 'completed':
+            result = job.get('result') or {}
+            logger.info(
+                f"Indexing completed | job_id={job_id} | "
+                f"documents={result.get('documents_indexed', 0)}",
+            )
+            return IndexResponse(
+                job_id=job_id,
+                status=result.get('status', 'indexed'),
+                documents_indexed=result.get('documents_indexed', 0),
+                chunks=result.get('chunks'),
+                parent_chunks=result.get('parent_chunks'),
+                child_chunks=result.get('child_chunks'),
+            )
+
+        if status == 'failed':
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    'job_id': job_id,
+                    'message': job.get('error') or 'Indexer failed',
+                },
+            )
+
+        await asyncio.sleep(0.5)
+
+
 @app.post('/index', response_model=IndexResponse)
 async def index_endpoint(request: IndexRequest):
-    """Index documents"""
+    """Submit documents to the dedicated indexing worker."""
     try:
         path = Path(request.path)
-        logger.info(
-            f"Index request | path: {path} | strategy: {request.strategy}",
-        )
-
-        # Validate path exists
         if not path.exists():
             raise FileNotFoundError(f"Path not found: {path}")
 
-        # Get pipeline based on strategy
-        index_pipeline = get_index_pipeline(request.strategy)
-
-        # Execute indexing
-        result = await index_pipeline.index(path)
-
+        queue: IndexJobQueue = app.state.index_queue
+        job_id = await queue.enqueue(
+            path=str(path),
+            strategy=request.strategy,
+        )
         logger.info(
-            f"Indexing completed | documents: {result['documents_indexed']} | "
-            f"strategy: {request.strategy}",
+            f"Index job submitted | job_id={job_id} | "
+            f"path={path} | strategy={request.strategy}",
         )
+        return await wait_for_index_job(queue, job_id)
 
-        return IndexResponse(
-            status=result['status'],
-            documents_indexed=result.get('documents_indexed', 0),
-            chunks=result.get('chunks'),
-            parent_chunks=result.get('parent_chunks'),
-            child_chunks=result.get('child_chunks'),
+    except HTTPException:
+        raise
+
+    except FileNotFoundError as exc:
+        logger.error(f"Index failed - file not found: {exc}")
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
         )
+    except Exception as exc:
+        logger.error(f"Index failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    except FileNotFoundError as e:
-        logger.error(f"Index failed - file not found: {e}")
-        raise HTTPException(status_code=404, detail=str(e))
 
-    except Exception as e:
-        logger.error(f"Index failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+@app.post('/index/{job_id}/retry', response_model=IndexResponse)
+async def retry_index_endpoint(job_id: str):
+    """Retry a failed job from its last completed JSONL document."""
+    queue: IndexJobQueue = app.state.index_queue
+    try:
+        await queue.retry(job_id)
+        logger.info(f"Index job retry queued | job_id={job_id}")
+        return await wait_for_index_job(queue, job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            f"Index retry failed | job_id={job_id}: {exc}", exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get('/sessions/{session_id}', response_model=SessionResponse)
@@ -163,6 +222,11 @@ async def get_session(session_id: str):
         logger.info(f"Session retrieval | session: {session_id}")
 
         session_store = get_session_store()
+        if session_store is None:
+            raise HTTPException(
+                status_code=503,
+                detail='Session storage is not configured',
+            )
         session = await session_store.get(session_id)
 
         if not session:
@@ -200,6 +264,11 @@ async def delete_session(session_id: str):
         logger.info(f"Session deletion | session: {session_id}")
 
         session_store = get_session_store()
+        if session_store is None:
+            raise HTTPException(
+                status_code=503,
+                detail='Session storage is not configured',
+            )
         await session_store.delete(session_id)
 
         logger.info(f"Session deleted | session: {session_id}")

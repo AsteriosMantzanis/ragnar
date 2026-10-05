@@ -29,12 +29,13 @@ class QdrantSemanticCache(BaseSemanticCache):
         collection_name: str = 'ragnar_semantic_cache',
         threshold: float = 0.90,
         ttl_seconds: int = 3600,
+        embedding: DenseFastEmbedding | None = None,
     ):
         self.client = QdrantClient(url=url)
         self.collection_name = collection_name
         self.threshold = threshold
         self.ttl_seconds = ttl_seconds
-        self.embedding = DenseFastEmbedding()
+        self.embedding = embedding or DenseFastEmbedding()
 
         self._ensure_collection()
 
