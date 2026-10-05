@@ -5,187 +5,237 @@
 <h1 align="center">Ragnar</h1>
 
 <p align="center">
-  A modular, production-ready, bring-your-own-model RAG framework.
+  A containerized retrieval-augmented generation workbench.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="Python 3.12" />
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/status-active%20development-orange.svg" alt="Active Development" />
 </p>
 
----
-
-Ragnar is a RAG (Retrieval-Augmented Generation) framework built around one idea: every stage of the pipeline is swappable behind an interface. Bring your own embedding models, your own LLM, your own vector store adapter — Ragnar handles orchestration, caching, session management, reranking, grounding, and observability around them.
-
-It ships as a FastAPI service with a Streamlit reference UI, fully containerized, with a hybrid dense+sparse retrieval stack and a 4-step query pipeline (retrieve → rerank → generate → ground) that runs on every request.
-
-## Why Ragnar
-
-Most RAG demos hardcode a vector store, an embedding model, and an LLM provider, then call it a framework. Ragnar instead defines an `interfaces/` ABC for every moving part — loader, chunker, embedder, retriever, reranker, generator, grounder, session store, cache — and ships one concrete implementation per interface. Swapping Qdrant for another vector DB, or Ollama for a hosted LLM, means writing one adapter class, not forking the pipeline.
+Ragnar ingests PDF and DOCX files, stores hybrid dense+sparse vectors in Qdrant,
+and exposes a query pipeline through FastAPI and a Streamlit UI. Ollama provides
+the local language model; Redis stores sessions and indexing job state.
 
 ## Features
 
-- **Hybrid retrieval** — dense (`nomic-embed-text`) + sparse (SPLADE) vectors fused via Reciprocal Rank Fusion in Qdrant
-- **Two indexing/query strategies** — `flat` (single-collection chunk retrieval) and `hierarchical` (parent section + child subsection collections, linked and retrieved together)
-- **Query pipeline with 4 tracked stages** — retrieval, cross-encoder reranking, generation, and answer grounding — each stage timed and recorded per request
-- **Answer grounding** — every generated claim is checked against retrieved context via an NLI cross-encoder (`cross-encoder/nli-deberta-v3-base`), and a grounded-percentage score is returned with the response
-- **Semantic response caching** — a Qdrant-backed semantic cache short-circuits repeat first-turn questions (cosine threshold 0.90, 30-day TTL), skipped for follow-up turns in a conversation
-- **Session-aware conversations** — Redis-backed (or in-memory) session store carries the last few exchanges into each new query as context
-- **Document ingestion via Docling** — PDF/DOCX parsing with table and layout extraction, chunked at section or subsection granularity
-- **Per-request observability** — every query returns step-by-step timing, source count, grounding percentage, and cache hit/score; a `MetricsCollector` aggregates across requests
-- **FastAPI + Streamlit** — a documented REST API (`/docs`, `/redoc`) plus a chat UI showing sources, grounding, and per-query performance breakdown
-- **Fully containerized** — one `docker compose up` brings up Ollama, Qdrant, Redis, the API, and the UI
+- Dense and sparse FastEmbed vectors fused with Qdrant Reciprocal Rank Fusion.
+- Flat subsection indexing or hierarchical section-and-subsection indexing.
+- Docling conversion isolated from embedding/indexing in separate processes.
+- Persistent JSONL spools, per-document progress checkpoints, and retry of
+  failed jobs without re-converting completed spools.
+- Deterministic Qdrant point IDs so retried upserts overwrite existing points.
+- Query reranking, claim grounding, semantic caching, and per-stage metrics.
+- FastAPI endpoints and a Streamlit chat/indexing interface.
 
 ## Architecture
 
-Every subsystem follows the same pattern: an ABC in `interfaces/`, one or more concrete implementations beside it, and a factory function in `api/dependencies.py` (memoized with `@lru_cache`) that wires the chosen implementation into the pipeline. This keeps the pipeline classes dependent only on interfaces, never concrete classes, and makes new backends a matter of implementing one ABC.
-
-```
-ragnar/
-├── api/                 # FastAPI app, request/response models, DI factories
-├── pipelines/
-│   ├── index/            # FlatIndexPipeline, HierarchicalIndexPipeline
-│   ├── query/             # FlatQueryPipeline, HierarchicalQueryPipeline
-│   └── interfaces/        # BaseIndexPipeline, BaseQueryPipeline (shared 7-step query flow)
-├── loaders/              # DoclingLoader (PDF/DOCX → Document/DocumentElement)
-├── chunkers/              # fixed, page, section, subsection chunkers
-├── embeddings/
-│   ├── dense/              # FastEmbed dense embedder (nomic-embed-text)
-│   └── sparse/              # FastEmbed sparse embedder (SPLADE)
-├── retrieval/             # dense, sparse, and hybrid (RRF) Qdrant retrievers
-├── rerank/                # FastEmbed cross-encoder reranker
-├── grounding/              # HF NLI cross-encoder grounding check
-├── generation/             # answer generator (LLM + Jinja2 prompt templates)
-├── cache/                 # Qdrant-backed semantic response cache
-├── session/                # Session model + Redis / in-memory session stores
-├── index/                  # QdrantIndexer (embeds + upserts chunks)
-├── models/                 # Document, DocumentElement, Chunk data models
-├── prompts/                 # Jinja2 (.j2) prompt templates + loader
-├── observability/           # QueryTracker (per-step timing), MetricsCollector
-└── ui/                      # Streamlit reference client
+```text
+Host browser
+    |
+    +-- Streamlit UI :8501 --API_URL--> FastAPI :8000
+                                         |       |
+                                         |       +-- Redis job queue
+                                         |                 |
+                                         |             Indexer worker
+                                         |              /         \
+                                         |       Docling process  Embed/index process
+                                         |              \         /
+                                         +-------------- Qdrant :6333
+                                         +-------------- Ollama :11434
 ```
 
-### Query flow
+For each queued job, the worker runs Docling conversion first and writes one
+document per line to a JSONL spool. That subprocess exits before the embedding
+process starts. The indexing process streams the spool through the selected
+chunkers and writes vectors to Qdrant in bounded batches.
 
-Every call to `BaseQueryPipeline.query()` runs the same four tracked steps, with the retrieval step overridden per strategy (flat vs. hierarchical):
+After all writes for a JSONL document succeed, the worker atomically records a
+checkpoint. If an indexing child is killed, the worker records the job as
+failed, keeps the spool/checkpoint, exits, and is restarted by Compose. Retrying
+the job resumes at the first uncheckpointed document. If a process died midway
+through a document, that document is replayed; deterministic IDs make its
+already-written points overwrite instead of duplicate.
 
-1. **Retrieve** — the query is run against the vector store (single collection for `flat`, linked parent/child collections for `hierarchical`) — Qdrant's own RRF fusion means this returns each chunk at most once, so no separate dedup step is needed
-2. **Rerank** — a cross-encoder reranks the retrieved set and keeps the top-k
-3. **Generate** — an LLM answers the query using the reranked context
-4. **Ground** — each claim in the answer is checked against the context, producing a grounded-percentage score
+Successful job spools are deleted. Failed job spools remain in the `index_spool`
+named volume. `docker compose down` preserves named volumes; `docker compose
+down -v` removes them, including retry data.
 
-A semantic cache lookup runs before step 1 (and a cache write after step 4) only on the first turn of a session, so follow-up questions always execute the full pipeline.
+## Indexing Strategies
+
+| Strategy | Chunks written | Collections | Query behavior |
+|---|---|---|---|
+| `flat` | Subsection chunks only | `subsections` | Hybrid retrieval from one collection |
+| `hierarchical` | Parent sections and child subsections | `sections` and `subsections` | Retrieve children, then load linked parents |
+
+Both strategies currently store dense and sparse vectors. Flat means a single
+chunk level, not dense-only. Use the same strategy when indexing and querying.
 
 ## Requirements
 
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) for dependency management
-- Docker and Docker Compose (for the full stack: Ollama, Qdrant, Redis)
-- A Hugging Face token (`HF_TOKEN`) if pulling gated embedding/grounding models
+- Docker Desktop with Docker Compose, or Docker Engine/Compose.
+- Python 3.12 and `uv` for local development.
+- Internet access on first startup to download Ollama and embedding/Docling
+  models.
+- A host documents directory mounted into the containers at `/docs`.
 
-## Quick start
+## Quick Start
 
-### Docker Compose (recommended)
+Create a local environment file from the template if needed:
 
-Brings up Ollama (LLM), Qdrant (vector store), Redis (sessions/cache), the API, and the UI:
-
-```bash
-git clone <repo-url>
-cd ragnar
-cp .env.example .env   # fill in HF_TOKEN and any overrides
-docker compose up --build
+```powershell
+Copy-Item dev.env .env
 ```
 
-- API: [http://localhost:8000/docs](http://localhost:8000/docs)
-- UI: [http://localhost:8501](http://localhost:8501)
-
-The `ollama` service automatically pulls `LLM_MODEL` (default `qwen2.5:3b`) on first boot.
-
-### Local development
+On macOS/Linux:
 
 ```bash
-uv sync
-
-# start dependencies only
-docker compose up qdrant redis ollama
-
-# run the API
-uv run python -m ragnar.api.main
-
-# in a separate terminal, run the UI
-uv run streamlit run ragnar/ui/streamlit_app.py
+cp dev.env .env
 ```
 
-## Configuration
+Edit `.env` for model overrides or tokens. The Compose file currently mounts
+`C:/Users/aster/Desktop/ragnar_papers` into `/docs`; change that bind mount to
+your documents directory if it differs.
 
-Ragnar is configured entirely through environment variables (see `.env`):
+Start the stack:
 
-| Variable | Description | Default |
-|---|---|---|
-| `dense_embed_model` | FastEmbed dense embedding model | `nomic-ai/nomic-embed-text-v1.5-Q` |
-| `sparse_embed_model` | FastEmbed sparse embedding model | `prithivida/Splade_PP_en_v1` |
-| `rerank_model` | Cross-encoder reranking model | `jinaai/jina-reranker-v2-base-multilingual` |
-| `grounding_model` | NLI cross-encoder for answer grounding | `cross-encoder/nli-deberta-v3-base` |
-| `LLM_MODEL` | Ollama model tag | `qwen2.5:3b` |
-| `OLLAMA_URL` | Ollama base URL | `http://localhost:11434` |
-| `QDRANT_URL` | Qdrant base URL | `http://localhost:6333` |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
-| `SESSION_STORE` | `redis` or `memory` | `redis` |
-| `SESSION_TTL` | Session TTL, seconds | `604800` (7 days) |
-| `PARENT_COLLECTION` | Qdrant collection for section-level chunks | `sections` |
-| `CHILD_COLLECTION` | Qdrant collection for subsection-level chunks | `subsections` |
-| `LINKAGE_ID` | Field linking child chunks to parent chunks | `parent_section_id` |
-| `HF_TOKEN` | Hugging Face token for gated models | — |
+```bash
+docker compose up --build -d
+```
 
-> **Never commit a populated `.env`.** It's already git-ignored — keep it that way, and rotate any token that ends up in a shared file or archive.
+- Streamlit UI: <http://localhost:8501>
+- API docs: <http://localhost:8000/docs>
+- Qdrant dashboard/API: <http://localhost:6333/dashboard>
+- Ollama API: <http://localhost:11434>
 
-## API
+Ollama pulls the configured model on startup. First-time model downloads can
+take several minutes. Model files and indexing spools are stored in Docker
+named volumes.
 
-Interactive docs are served at `/docs` (Swagger) and `/redoc` once the API is running. Core endpoints:
+### Run Your First Index
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/index` | Index documents from a filesystem path (`strategy`: `flat` \| `hierarchical`) |
-| `POST` | `/query` | Run a query through the pipeline (`strategy`: `flat` \| `hierarchical`) |
-| `GET` | `/sessions/{session_id}` | Retrieve a session's message history |
-| `DELETE` | `/sessions/{session_id}` | Delete a session |
+1. In `docker-compose.yaml`, set the `api` and `indexer` document bind mounts
+  to a host folder containing your PDFs or DOCX files. The container path is
+  `/docs` by default.
+2. Open <http://localhost:8501>, select `flat` or `hierarchical`, enter `/docs`,
+  and click **Index documents**.
+3. Wait for the job to complete. If it fails, the UI offers **Retry from
+  checkpoint**; completed document records are not reprocessed.
+4. Open the Chat tab, select the same strategy used for indexing, and ask a
+  question about the documents.
 
-**Index documents:**
+## Index and Query
+
+In the UI, select `flat` or `hierarchical`, set the path to `/docs`, and submit.
+The index endpoint waits for completion and returns the job ID and counts.
+If a job fails, the UI offers a retry from its last completed JSONL document.
+
+Equivalent API requests:
 
 ```bash
 curl -X POST http://localhost:8000/index \
   -H "Content-Type: application/json" \
-  -d '{"path": "/data/docs", "strategy": "hierarchical"}'
+  -d '{"path":"/docs","strategy":"hierarchical"}'
 ```
-
-**Query:**
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
-  -d '{"query": "What are the key findings?", "strategy": "hierarchical"}'
+  -d '{"query":"What are the key findings?","strategy":"hierarchical"}'
 ```
 
-A query response includes the answer, per-chunk grounding results, an overall `grounded_percentage`, the reranked source chunks, the session ID, and a `metrics` block with per-step timings.
+Retry a failed job by its returned `job_id`:
 
-## Extending Ragnar
+```bash
+curl -X POST http://localhost:8000/index/<job_id>/retry
+```
 
-Adding a new backend for any stage is a three-step process:
+The API also exposes `GET /sessions/{session_id}`, `DELETE
+/sessions/{session_id}`, and `GET /logs`. Query responses include the answer,
+sources, grounding results, and stage metrics.
 
-1. Implement the relevant ABC (e.g. `ragnar/retrieval/interfaces/base_retriever.py`)
-2. Add a factory function in `ragnar/api/dependencies.py`, decorated with `@lru_cache` if it should be a singleton
-3. Wire it into the `flat`/`hierarchical` factory functions, or add a new strategy branch
+## Configuration
 
-Because pipelines depend only on interfaces, no other code needs to change.
+Compose reads values from the shell or local `.env`; defaults are shown below.
+The model variable names are lowercase and are passed to both API and indexer.
 
-## Roadmap
+| Variable | Purpose | Compose default |
+|---|---|---|
+| `LLM_MODEL` | Ollama model | `gemma2:2b` |
+| `dense_embed_model` | Dense FastEmbed model | `nomic-ai/nomic-embed-text-v1.5-Q` |
+| `sparse_embed_model` | Sparse FastEmbed model | `Qdrant/bm42-all-minilm-l6-v2-attentions` |
+| `PARENT_COLLECTION` | Hierarchical section collection | `sections` |
+| `CHILD_COLLECTION` | Subsection collection | `subsections` |
+| `INDEX_BATCH_SIZE` | Chunks embedded/upserted per batch | `1` |
+| `DENSE_EMBED_THREADS` | ONNX threads for dense model | `2` |
+| `SPARSE_EMBED_THREADS` | ONNX threads for sparse model | `2` |
+| `DOCLING_DO_OCR` | Enable OCR for scanned PDFs | `false` |
+| `DOCLING_BATCH_SIZE` | Docling page batch size | `1` |
+| `DOCLING_NUM_THREADS` | Docling CPU threads | `2` |
+| `HF_TOKEN` | Optional Hugging Face token | empty |
 
-- Populate `ragnar/evals/` with RAGAS-based evaluation harnesses
-- OpenTelemetry tracing across pipeline steps (currently custom `QueryTracker` timing only)
-- Agent-based (v2) query pipeline, building on the existing ABC/factory pattern
-- Automated test suite (none yet)
+`INDEX_SPOOL_DIR` defaults to `/var/lib/ragnar/index-spool` in the indexer and
+is backed by the `index_spool` volume. Changing an embedding model requires
+reindexing. Changing the dense model to a different vector dimension also
+requires new or recreated Qdrant collections.
+
+For a manually restarted worker, use:
+
+```bash
+docker compose up -d --force-recreate indexer
+```
+
+## Local Development
+
+Install dependencies and start the backing services:
+
+```bash
+uv sync
+docker compose up -d qdrant redis ollama
+```
+
+Run the API and UI in separate terminals:
+
+```bash
+uv run python -m ragnar.api.main
+```
+
+```bash
+uv run streamlit run ragnar/ui/streamlit_app.py
+```
+
+The API uses `http://localhost:6333`, `redis://localhost:6379`, and
+`http://localhost:11434` by default when run outside Compose.
+
+## Project Layout
+
+```text
+ragnar/
+├── api/                 FastAPI application and dependency factories
+├── indexing/            Redis worker, process stages, JSONL spool, checkpoints
+├── loaders/             Docling loader and loader interfaces
+├── chunkers/            Fixed, page, section, and subsection chunkers
+├── embeddings/           Dense and sparse FastEmbed adapters
+├── index/                Qdrant indexing adapter
+├── retrieval/            Dense, sparse, and hybrid Qdrant retrievers
+├── pipelines/            Flat/hierarchical index and query pipelines
+├── rerank/               Cross-encoder reranking
+├── generation/            LLM response generation
+├── grounding/             NLI-based answer grounding
+├── cache/                 Semantic response cache
+├── session/               Session models and Redis store
+├── observability/         Query logs and metrics
+└── ui/                    Streamlit application
+```
+
+## Development Checks
+
+Run the configured repository hooks before committing:
+
+```bash
+pre-commit run --all-files
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

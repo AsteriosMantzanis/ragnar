@@ -15,6 +15,7 @@ import streamlit as st
 # Configuration
 
 API_URL = os.getenv('API_URL', 'http://localhost:8000')
+API_DISPLAY_URL = os.getenv('API_DISPLAY_URL', API_URL)
 
 LOGO_PATH = Path(__file__).parent / 'assets' / 'ragnar-logo.png'
 
@@ -679,7 +680,7 @@ def render_sidebar() -> None:
             unsafe_allow_html=True,
         )
 
-        st.caption(f"API · {API_URL}")
+        st.markdown(f"API · [{API_DISPLAY_URL}]({API_DISPLAY_URL})")
         st.caption('Ragnar RAG framework')
 
 

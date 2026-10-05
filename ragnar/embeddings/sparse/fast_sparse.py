@@ -18,7 +18,7 @@ class SparseFastEmbedding(BaseEmbedding):
         self,
         model: str = os.getenv(
             'sparse_embed_model',
-            'prithivida/Splade_PP_en_v1',
+            'Qdrant/bm42-all-minilm-l6-v2-attentions',
         ),
         max_concurrent: int = 1,
         batch_size: int = int(os.getenv('SPARSE_EMBED_BATCH_SIZE', '8')),
