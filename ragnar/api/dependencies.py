@@ -9,7 +9,6 @@ from ragnar.cache.semantic_qdrant_cache import QdrantSemanticCache
 from ragnar.embeddings.dense.fast_dense import DenseFastEmbedding
 from ragnar.embeddings.sparse.fast_sparse import SparseFastEmbedding
 from ragnar.generation.simple_generator import Generator
-from ragnar.grounding.hf_grounding import HF_Grounding
 from ragnar.indexing.pipeline_factory import build_index_pipeline
 from ragnar.llm.ollama_llm import OllamaLLMAdapter
 from ragnar.loaders.docling_loader import DoclingLoader
@@ -107,13 +106,6 @@ def get_generator():
 
 
 @lru_cache
-def get_grounder():
-    """Factory for grounder"""
-    logger.info('Creating HF_Grounding')
-    return HF_Grounding()
-
-
-@lru_cache
 def get_dense_embedding() -> DenseFastEmbedding:
     logger.info('Creating DenseFastEmbedding')
     return DenseFastEmbedding()
@@ -185,7 +177,6 @@ def get_flat_query_pipeline() -> BaseQueryPipeline:
     retriever = get_retriever()
     reranker = get_reranker()
     generator = get_generator()
-    grounder = get_grounder()
     session_store = get_session_store()
     semantic_cache = get_semantic_cache()
 
@@ -195,7 +186,6 @@ def get_flat_query_pipeline() -> BaseQueryPipeline:
         retriever=retriever,
         reranker=reranker,
         generator=generator,
-        grounder=grounder,
         session_store=session_store,
         semantic_cache=semantic_cache,
         collection_name=CHILD_COLLECTION,
@@ -211,7 +201,6 @@ def get_hierarchical_query_pipeline() -> BaseQueryPipeline:
     retriever = get_retriever()
     reranker = get_reranker()
     generator = get_generator()
-    grounder = get_grounder()
     session_store = get_session_store()
     semantic_cache = get_semantic_cache()
 
@@ -221,7 +210,6 @@ def get_hierarchical_query_pipeline() -> BaseQueryPipeline:
         retriever=retriever,
         reranker=reranker,
         generator=generator,
-        grounder=grounder,
         session_store=session_store,
         semantic_cache=semantic_cache,
         parent_collection_name=PARENT_COLLECTION,
@@ -267,7 +255,6 @@ def preload_models() -> None:
     get_dense_embedding()
     get_sparse_embedding()
     get_reranker()
-    get_grounder()
     get_semantic_cache()
     get_retriever()
 

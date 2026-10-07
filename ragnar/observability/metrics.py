@@ -23,7 +23,6 @@ class QueryMetrics:
     steps: list[dict]
     answer_length: int
     num_sources: int
-    grounding_percentage: float
     cache_hit: bool = False
     cache_score: float | None = None
     timestamp: str | None = None
@@ -48,6 +47,5 @@ class MetricsCollector:
         logger.info(
             f"Query metrics recorded | "
             f"Total: {metrics.total_duration_s:.0f}ms | "
-            f"Sources: {metrics.num_sources} | "
-            f"Grounding: {metrics.grounding_percentage:.0f}%",
+            f"Sources: {metrics.num_sources}",
         )

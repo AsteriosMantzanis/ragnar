@@ -13,8 +13,6 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    grounding: list[dict]
-    grounded_percentage: float
     sources: list[dict]
     session_id: str
     conversation_length: int

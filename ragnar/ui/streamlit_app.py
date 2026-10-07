@@ -171,40 +171,6 @@ def new_session_id() -> str:
     return f"session_{uuid.uuid4().hex[:12]}"
 
 
-def grounding_class(percentage: float) -> str:
-    if percentage >= 75:
-        return 'grounding-high'
-
-    if percentage >= 50:
-        return 'grounding-medium'
-
-    return 'grounding-low'
-
-
-def grounding_label(percentage: float) -> str:
-    if percentage >= 75:
-        return 'Grounded'
-
-    if percentage >= 50:
-        return 'Partially grounded'
-
-    return 'Low grounding'
-
-
-def render_grounding(percentage: float) -> None:
-    css_class = grounding_class(percentage)
-    label = grounding_label(percentage)
-
-    st.markdown(
-        f"""
-        <div class="grounding {css_class}">
-            {percentage:.0f}% · {label}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_sources(sources: list[dict]) -> None:
     if not sources:
         return
@@ -246,14 +212,6 @@ def render_metrics(messages: list[dict]) -> None:
     if not assistant_messages:
         return
 
-    grounding_scores = [
-        message.get('grounding_percentage', 0)
-        for message in assistant_messages
-    ]
-    average_grounding = (
-        sum(grounding_scores) / len(grounding_scores)
-    )
-
     # Extract metrics if available
     response_times = [
         message.get('metrics', {}).get('total_duration_s', 0)
@@ -265,7 +223,7 @@ def render_metrics(messages: list[dict]) -> None:
         if response_times else 0
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown(
@@ -300,17 +258,6 @@ def render_metrics(messages: list[dict]) -> None:
             unsafe_allow_html=True,
         )
 
-    with col4:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">Avg Grounding</div>
-                <div class="metric-value">{average_grounding:.0f}%</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
 
 def render_query_metrics(metrics: dict) -> None:
     """Render metrics for a single query."""
@@ -319,7 +266,7 @@ def render_query_metrics(metrics: dict) -> None:
         return
 
     with st.expander('Query performance'):
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
 
         with col1:
             st.metric(
@@ -331,12 +278,6 @@ def render_query_metrics(metrics: dict) -> None:
             st.metric(
                 'Sources',
                 metrics['num_sources'],
-            )
-
-        with col3:
-            st.metric(
-                'Grounding',
-                f"{metrics['grounding_percentage']:.0f}%",
             )
 
         st.divider()
@@ -354,25 +295,6 @@ def render_query_metrics(metrics: dict) -> None:
             use_container_width=True,
             hide_index=True,
         )
-
-
-def render_query_debug_info(message: dict) -> None:
-    """Render the rewritten and expanded queries for a single answer."""
-    rewritten_query = message.get('rewritten_query')
-    expanded_queries = message.get('expanded_queries') or []
-
-    if not rewritten_query and not expanded_queries:
-        return
-
-    with st.expander('Query analysis', expanded=False):
-        if rewritten_query:
-            st.markdown('**Rewritten query**')
-            st.code(rewritten_query)
-
-        if expanded_queries:
-            st.markdown('**Expanded queries**')
-            for expanded_query in expanded_queries:
-                st.code(expanded_query)
 
 
 def render_log_entry(entry: dict) -> str:
@@ -696,14 +618,6 @@ def render_messages() -> None:
             if role != 'assistant':
                 continue
 
-            # Grounding for this specific answer
-            grounding_percentage = message.get(
-                'grounding_percentage',
-            )
-
-            if grounding_percentage is not None:
-                render_grounding(grounding_percentage)
-
             # Sources used for this specific answer
             render_sources(
                 message.get('sources', []),
@@ -713,9 +627,6 @@ def render_messages() -> None:
             render_query_metrics(
                 message.get('metrics', {}),
             )
-
-            # Rewritten and expanded queries for this specific answer
-            render_query_debug_info(message)
 
             # cache bool and score
             render_cache_status(
@@ -752,10 +663,6 @@ def handle_query(query: str) -> None:
                     'answer',
                     'No answer returned.',
                 ),
-                'grounding_percentage': result.get(
-                    'grounded_percentage',
-                    0,
-                ),
                 'sources': result.get(
                     'sources',
                     [],
@@ -763,14 +670,6 @@ def handle_query(query: str) -> None:
                 'metrics': result.get(
                     'metrics',
                     {},
-                ),
-                'rewritten_query': result.get(
-                    'rewritten_query',
-                    None,
-                ),
-                'expanded_queries': result.get(
-                    'expanded_queries',
-                    [],
                 ),
             },
         )

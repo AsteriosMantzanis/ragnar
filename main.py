@@ -8,7 +8,7 @@ Ollama still need to be reachable (e.g. `docker compose up qdrant redis
 ollama`, then run this script on the host against .env's URLs).
 
 Logs stream to stderr as the pipeline runs — every step (retrieve,
-retrieve, dedupe, rerank, generate, ground) logs through loguru already, so
+retrieve, dedupe, rerank, generate) logs through loguru already, so
 there's nothing extra to wire up to see them; they just print.
 
 Usage:
@@ -68,7 +68,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def print_query_result(result: dict) -> None:
     print(f"\nAnswer: {result.get('answer')}\n")
-    print(f"Grounded: {result.get('grounded_percentage', 0):.0f}%")
 
     sources = result.get('sources', [])
     print(f"Sources ({len(sources)}):")

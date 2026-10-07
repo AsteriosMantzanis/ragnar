@@ -9,7 +9,6 @@ from loguru import logger
 
 from ragnar.cache.interfaces.base_sem_cache import BaseSemanticCache
 from ragnar.generation.interfaces.base_generator import BaseGenerator
-from ragnar.grounding.interfaces.base_grounder import BaseGrounding
 from ragnar.llm.interfaces.llm_adapter import BaseLLMAdapter
 from ragnar.observability.metrics import MetricsCollector
 from ragnar.observability.metrics import QueryMetrics
@@ -31,7 +30,6 @@ class BaseQueryPipeline(ABC):
         retriever: BaseRetriever,
         reranker: BaseCrossEncoder,
         generator: BaseGenerator,
-        grounder: BaseGrounding,
         session_store: BaseSessionStore | None = None,
         semantic_cache: BaseSemanticCache | None = None,
     ):
@@ -39,7 +37,6 @@ class BaseQueryPipeline(ABC):
         self.retriever = retriever
         self.reranker = reranker
         self.generator = generator
-        self.grounder = grounder
         self.session_store = session_store
         self.semantic_cache = semantic_cache
         self.metrics_collector = MetricsCollector()
@@ -104,7 +101,6 @@ class BaseQueryPipeline(ABC):
                     steps=[],
                     answer_length=len(cached.get('answer', '')),
                     num_sources=len(cached.get('sources', [])),
-                    grounding_percentage=cached.get('grounded_percentage', 0),
                     cache_hit=True,
                     cache_score=cache_score,
                 )
@@ -157,21 +153,11 @@ class BaseQueryPipeline(ABC):
                 answer = self._normalize_answer(generated_answer)
                 logger.info(f"Generated ({len(answer)} chars)")
 
-            # 4. Ground
-            async with tracker.step('grounding'):
-                logger.info('Step 4/4: Grounding answer')
-                grounding = await self.grounder.ground(answer, reranked)
-                grounded_count = sum(1 for g in grounding if g['grounded'])
-                grounded_pct = (
-                    grounded_count / len(grounding)
-                    * 100
-                ) if grounding else 0
-                logger.info(f"Grounding: {grounded_count}/{len(grounding)}")
-
             # Store in session
             session.add_message(
-                'assistant', answer,
-                sources=reranked, grounding=grounding,
+                'assistant',
+                answer,
+                sources=reranked,
             )
             await session_store.save(session)
 
@@ -188,7 +174,6 @@ class BaseQueryPipeline(ABC):
                 steps=tracker.steps,
                 answer_length=len(answer),
                 num_sources=len(reranked),
-                grounding_percentage=grounded_pct,
                 cache_hit=False,
                 cache_score=None,
             )
@@ -196,8 +181,6 @@ class BaseQueryPipeline(ABC):
 
             result = {
                 'answer': answer,
-                'grounding': grounding,
-                'grounded_percentage': grounded_pct,
                 'sources': reranked,
                 'session_id': session_id,
                 'conversation_length': len(session.messages),

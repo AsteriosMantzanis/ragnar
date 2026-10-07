@@ -54,7 +54,6 @@ class RedisSessionStore(BaseSessionStore):
                 content=m['content'],
                 timestamp=datetime.fromisoformat(m['timestamp']),
                 sources=m.get('sources'),
-                grounding=m.get('grounding'),
             )
             for m in session_dict['messages']
         ]
@@ -78,7 +77,6 @@ class RedisSessionStore(BaseSessionStore):
                     'content': m.content,
                     'timestamp': m.timestamp.isoformat(),
                     'sources': m.sources,
-                    'grounding': m.grounding,
                 }
                 for m in session.messages
             ],

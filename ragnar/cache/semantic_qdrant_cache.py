@@ -111,11 +111,6 @@ class QdrantSemanticCache(BaseSemanticCache):
 
         return {
             'answer': payload.get('answer', ''),
-            'grounding': payload.get('grounding', []),
-            'grounded_percentage': payload.get(
-                'grounded_percentage',
-                0,
-            ),
             'sources': payload.get('sources', []),
             'cached': True,
             'cache_score': match.score,
@@ -137,11 +132,6 @@ class QdrantSemanticCache(BaseSemanticCache):
                 'query': query,
                 'strategy': strategy,
                 'answer': response.get('answer', ''),
-                'grounding': response.get('grounding', []),
-                'grounded_percentage': response.get(
-                    'grounded_percentage',
-                    0,
-                ),
                 'sources': response.get('sources', []),
                 'created_at': datetime.now(timezone.utc).timestamp(),
             },

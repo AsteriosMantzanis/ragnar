@@ -10,4 +10,3 @@ class Message:
     content: str
     timestamp: datetime
     sources: list[dict] | None = None
-    grounding: list[dict] | None = None

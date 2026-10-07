@@ -106,13 +106,11 @@ async def query_endpoint(request: QueryRequest):
 
         logger.info(
             f"Query completed | session: {session_id} | "
-            f"grounded: {result['grounded_percentage']:.0f}%",
+            f"sources: {len(result['sources'])}",
         )
 
         return QueryResponse(
             answer=result['answer'],
-            grounding=result['grounding'],
-            grounded_percentage=result['grounded_percentage'],
             sources=result['sources'],
             session_id=result['session_id'],
             conversation_length=result['conversation_length'],

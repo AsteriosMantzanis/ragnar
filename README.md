@@ -25,7 +25,7 @@ the local language model; Redis stores sessions and indexing job state.
 - Persistent JSONL spools, per-document progress checkpoints, and retry of
   failed jobs without re-converting completed spools.
 - Deterministic Qdrant point IDs so retried upserts overwrite existing points.
-- Query reranking, claim grounding, semantic caching, and per-stage metrics.
+- Query reranking, semantic caching, and per-stage metrics.
 - FastAPI endpoints and a Streamlit chat/indexing interface.
 
 ## Architecture
@@ -151,8 +151,7 @@ curl -X POST http://localhost:8000/index/<job_id>/retry
 ```
 
 The API also exposes `GET /sessions/{session_id}`, `DELETE
-/sessions/{session_id}`, and `GET /logs`. Query responses include the answer,
-sources, grounding results, and stage metrics.
+/sessions/{session_id}`, and `GET /logs`. Query responses include the answer, sources, and stage metrics.
 
 ## Configuration
 
@@ -221,7 +220,6 @@ ragnar/
 ├── pipelines/            Flat/hierarchical index and query pipelines
 ├── rerank/               Cross-encoder reranking
 ├── generation/            LLM response generation
-├── grounding/             NLI-based answer grounding
 ├── cache/                 Semantic response cache
 ├── session/               Session models and Redis store
 ├── observability/         Query logs and metrics

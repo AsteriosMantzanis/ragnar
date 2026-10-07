@@ -19,7 +19,6 @@ class Session:
         role: str,
         content: str,
         sources: list[dict[str, Any]] | None = None,
-        grounding: list[dict[str, Any]] | None = None,
     ):
         self.messages.append(
             Message(
@@ -27,7 +26,6 @@ class Session:
                 content=content,
                 timestamp=datetime.now(timezone.utc),
                 sources=sources,
-                grounding=grounding,
             ),
         )
 
